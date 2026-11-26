@@ -1,0 +1,14 @@
+# Attendance exports and reports contain staff data - never commit them
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+test/*.png
+test/sheets.json
+
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+node_modules/

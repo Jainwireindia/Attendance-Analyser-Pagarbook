@@ -1,0 +1,1731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Attendance Analyser</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#10182B; --navy:#0B1F3A; --navy-2:#132A4D;
+    --paper:#F6F3EC; --paper-2:#EFEAE0; --card:#FFFDF9;
+    --rule:#D9D2C2; --rule-strong:#B9AF98;
+    --gold:#B8860B; --rust:#B4532A; --crimson:#A6303C; --teal:#1E7A73;
+    --violet:#6A4C93; --sage:#3E7A4E; --muted:#6B6456;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
+  body{font-family: ui-sans-serif, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing:antialiased; font-size:14px;}
+  .mono{font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;}
+  .serif{font-family: Georgia, "Iowan Old Style", serif;}
+  [hidden]{display:none !important;}
+  button{font-family:inherit;}
+
+  /* ---- Login ---- */
+  #loginView{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px 16px;
+    background:linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%);}
+  .login-card{background:var(--card); width:100%; max-width:380px; border-radius:4px; padding:28px 26px; box-shadow:0 10px 40px rgba(0,0,0,.35);}
+  .login-card h1{font-family:Georgia,serif; font-weight:400; font-size:24px; margin:0 0 4px; color:var(--navy);}
+  .login-card p.sub{margin:0 0 20px; color:var(--muted); font-size:13px;}
+  .login-card label{display:block; margin-bottom:12px;}
+  .login-card input{width:100%;}
+  .login-card .btn{width:100%; padding:10px; margin-top:6px;}
+  .login-card details{margin-top:16px; font-size:12.5px; color:var(--muted);}
+  .login-err{color:var(--crimson); font-size:13px; min-height:18px; margin:6px 0 0;}
+
+  /* ---- Top bar ---- */
+  .topbar{background:linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%); color:#F4F1E8; border-bottom:3px double #3A5279;}
+  .topbar-inner{max-width:1240px; margin:0 auto; padding:14px 24px 0; display:flex; flex-wrap:wrap; align-items:center; gap:10px 20px;}
+  .brand{display:flex; flex-direction:column;}
+  .brand .eyebrow{font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:#9FB3D6;}
+  .brand .title{font-family:Georgia,serif; font-size:21px;}
+  .top-right{margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12.5px;}
+  .top-right select{background:#1C3560; color:#F4F1E8; border-color:#3A5279; max-width:260px;}
+  .sync{color:#C7D2E6; display:flex; align-items:center; gap:6px;}
+  .sync .dot{width:8px; height:8px; border-radius:50%; background:#6FBF8A;}
+  .sync.busy .dot{background:#E6C35C;}
+  .sync.err .dot{background:#E0707B;}
+  .linkbtn{background:transparent; border:1px solid #3A5279; color:#F4F1E8; padding:5px 10px; border-radius:3px; cursor:pointer; font-size:12.5px;}
+  .linkbtn:hover{background:#1C3560;}
+  .nav{max-width:1240px; margin:0 auto; padding:10px 24px 0; display:flex; gap:2px; flex-wrap:wrap;}
+  .nav button{background:transparent; border:none; color:#9FB3D6; padding:9px 14px 10px; cursor:pointer; font-size:13px; border-bottom:2px solid transparent;}
+  .nav button.active{color:#fff; border-bottom-color:#E6C35C;}
+  .nav button:hover{color:#fff;}
+
+  main{max-width:1240px; margin:0 auto; padding:22px 24px 64px;}
+
+  /* ---- Cards ---- */
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:3px;}
+  .card + .card, .grid + .card, .card + .grid{margin-top:18px;}
+  .card-head{padding:13px 18px; border-bottom:1px solid var(--rule); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .card-head h2{font-family:Georgia,serif; font-weight:400; font-size:16px; margin:0; color:var(--navy);}
+  .card-body{padding:18px;}
+  .hint{font-size:12.5px; color:var(--muted); margin:0; line-height:1.5;}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  @media (max-width:860px){ .grid{grid-template-columns:1fr;} }
+
+  .field-label{font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; display:block; margin-bottom:4px;}
+  input[type=text], input[type=password], input[type=number], input[type=url], select, textarea{
+    border:1px solid var(--rule-strong); border-radius:3px; padding:7px 9px; font-size:13px; background:#FFFEFB; color:var(--ink); font-family:inherit;
+  }
+  input:focus, select:focus, textarea:focus{outline:2px solid #9FB3D6; outline-offset:0;}
+
+  .btn{border:1px solid var(--navy); background:var(--navy); color:#F4F1E8; padding:8px 16px; border-radius:3px; cursor:pointer; font-size:13px;}
+  .btn:hover{background:var(--navy-2);}
+  .btn.secondary{background:transparent; color:var(--navy);}
+  .btn.secondary:hover{background:var(--paper-2);}
+  .btn.danger{background:transparent; color:var(--crimson); border-color:var(--crimson);}
+  .btn.small{padding:4px 10px; font-size:12px;}
+  .btn:disabled{opacity:.4; cursor:not-allowed;}
+  .btn-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+
+  .seg{display:flex; gap:6px; flex-wrap:wrap;}
+  .seg button{border:1px solid var(--rule-strong); background:var(--paper-2); color:var(--muted); padding:6px 12px; border-radius:20px; cursor:pointer; font-size:12.5px;}
+  .seg button.active{background:var(--navy); color:#F4F1E8; border-color:var(--navy);}
+  .seg button .c{opacity:.75; margin-left:3px;}
+
+  /* ---- Stamps / KPI ---- */
+  .stamps{display:flex; gap:10px; flex-wrap:wrap; padding:16px 18px;}
+  .stamp{border:1.5px solid var(--rule-strong); border-radius:3px; padding:10px 14px; min-width:120px; background:var(--paper-2); flex:1 1 120px;}
+  .stamp .n{font-family:Georgia,serif; font-size:26px; line-height:1;}
+  .stamp .lbl{font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin-top:4px;}
+  .stamp.click{cursor:pointer;}
+  .stamp.click:hover{border-color:var(--navy);}
+  .c-open{color:var(--crimson);} .c-ans{color:var(--gold);} .c-done{color:var(--sage);} .c-navy{color:var(--navy);}
+  .c-ot{color:var(--gold);} .c-half{color:var(--rust);} .c-abs{color:var(--crimson);} .c-wo{color:var(--teal);}
+  .c-new{color:var(--violet);} .c-resign{color:#7A4A2B;} .c-auto{color:var(--sage);} .c-punch{color:#2C3E63;}
+
+  .progress{height:10px; background:#E9E3D5; border-radius:6px; overflow:hidden; display:flex; min-width:120px;}
+  .progress span{display:block; height:100%;}
+  .progress .p-done{background:var(--sage);}
+  .progress .p-ans{background:#D9AE45;}
+  .legend{display:flex; gap:14px; font-size:12px; color:var(--muted); flex-wrap:wrap;}
+  .legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px;}
+
+  /* ---- Tables ---- */
+  .table-wrap{overflow-x:auto;}
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  thead th{text-align:left; padding:9px 12px; background:var(--navy); color:#F0ECE0; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;}
+  tbody td{padding:8px 12px; border-bottom:1px solid var(--rule); vertical-align:top;}
+  tbody tr:nth-child(even){background:#FBF9F4;}
+  tbody tr.clickable{cursor:pointer;}
+  tbody tr.clickable:hover{background:#F1ECDF;}
+  td.num{text-align:right; font-variant-numeric:tabular-nums;}
+  td.date{font-family: ui-monospace, monospace; white-space:nowrap; color:var(--muted);}
+  td.name{font-weight:600; color:var(--navy); white-space:nowrap;}
+  td.name .sid{display:block; font-weight:400; font-size:11px; color:var(--muted); font-family:ui-monospace, monospace;}
+  td.id{font-family:ui-monospace, monospace; white-space:nowrap; font-weight:600; color:var(--navy);}
+  .tag{display:inline-block; font-size:10px; letter-spacing:.03em; text-transform:uppercase; padding:2px 7px; border-radius:20px; font-weight:600; margin-right:6px; white-space:nowrap;}
+  .tag.ot{background:#FCF0D6; color:#8A6206;} .tag.half{background:#F9E2D6; color:#8A3E1C;}
+  .tag.abs{background:#F6D9DC; color:#7C1F2A;} .tag.wo{background:#D9EEEB; color:#155C56;}
+  .tag.new{background:#E9E1F2; color:#4E3771;} .tag.resign{background:#F0E3D6; color:#7A4A2B;}
+  .tag.punch{background:#E4E9F2; color:#2C3E63;} .tag.auto, .tag.same{background:#DCEDDF; color:#2C5E37;}
+  .tag.similar{background:#FCF0D6; color:#8A6206;} .tag.conflict{background:#F6D9DC; color:#7C1F2A;}
+  .tag.samename{background:#E4E9F2; color:#2C3E63;}
+  .tag.role-admin{background:#F6D9DC; color:#7C1F2A;} .tag.role-office{background:#E4E9F2; color:#2C3E63;} .tag.role-supervisor{background:#D9EEEB; color:#155C56;}
+
+  .sol-cell{min-width:230px;}
+  .sol-cell input{width:100%;}
+  .sol-cell .by{font-size:11px; color:var(--muted); margin-top:3px;}
+  .sol-cell.saving input{background:#FFF9E8;}
+  .sol-cell.saved input{background:#F1F8F2;}
+  .tick{width:22px; height:22px; cursor:pointer; accent-color:var(--sage);}
+  .tick:disabled{cursor:not-allowed;}
+  td.tick-cell{text-align:center; white-space:nowrap;}
+  tr.leaving{opacity:0; transition:opacity .35s ease;}
+  .who{display:block; line-height:1.45;}
+  .who .src{color:var(--muted); font-size:11.5px;}
+
+  .filters{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; padding:14px 18px; border-bottom:1px solid var(--rule);}
+  .filters .grow{flex:1 1 200px;}
+  .filters input[type=text]{width:100%;}
+
+  .banner{margin:14px 18px 0; padding:10px 14px; border-left:3px solid var(--crimson); background:#FCF1F2; font-size:12.8px; color:#5A1A22; line-height:1.5;}
+  .banner.info{border-left-color:var(--teal); background:#EEF6F5; color:#14423E;}
+  .empty{padding:40px 20px; text-align:center; color:var(--muted);}
+
+  /* ---- Upload ---- */
+  .dropzone{border:1.5px dashed var(--rule-strong); border-radius:3px; padding:28px 20px; text-align:center; cursor:pointer;
+    background: repeating-linear-gradient(0deg, transparent 0 27px, #EDE7D8 27px 28px);}
+  .dropzone:hover, .dropzone.drag{border-color:var(--navy);}
+  .dropzone h3{margin:0 0 4px; font-family:Georgia,serif; font-weight:400; font-size:16.5px; color:var(--navy);}
+  .dropzone p{margin:0; font-size:12.5px; color:var(--muted);}
+  .file-list{display:flex; flex-wrap:wrap; gap:8px; margin-top:14px;}
+  .file-chip{display:flex; align-items:center; gap:8px; border:1px solid var(--rule-strong); background:var(--paper-2); border-radius:20px; padding:5px 6px 5px 12px; font-size:12.5px;}
+  .file-chip .meta{color:var(--muted); font-size:11.5px;}
+  .file-chip button{border:none; background:transparent; cursor:pointer; color:var(--muted); font-size:15px; width:22px; height:22px; border-radius:50%;}
+  textarea.pasteArea{width:100%; min-height:140px; font-family:ui-monospace,monospace; font-size:12px;}
+  .config-grid{display:flex; gap:20px; flex-wrap:wrap;}
+  .config-grid input{width:110px;}
+
+  /* ---- Users form ---- */
+  .form-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:14px;}
+  .form-grid input, .form-grid select{width:100%;}
+
+  /* ---- Modal / toast ---- */
+  .modal-bg{position:fixed; inset:0; background:rgba(11,31,58,.55); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20;}
+  .modal{background:var(--card); border-radius:4px; padding:22px; width:100%; max-width:380px;}
+  .modal h3{margin:0 0 14px; font-family:Georgia,serif; font-weight:400; color:var(--navy);}
+  .modal label{display:block; margin-bottom:10px;}
+  .modal input{width:100%;}
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(10px); background:var(--navy); color:#F4F1E8; padding:10px 16px; border-radius:4px; font-size:13px;
+    opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; box-shadow:0 4px 16px rgba(0,0,0,.25); max-width:92vw; display:flex; gap:14px; align-items:center; z-index:30;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto;}
+  .toast button{background:transparent; border:1px solid #9FB3D6; color:#fff; border-radius:3px; padding:3px 10px; cursor:pointer;}
+
+  .print-only{display:none;}
+  @media (max-width:640px){
+    .topbar-inner, .nav, main{padding-left:16px; padding-right:16px;}
+    .card-body{padding:14px;}
+    .top-right{margin-left:0;}
+  }
+  @media print{
+    .topbar, .no-print{display:none !important;}
+    body{background:#fff; font-size:12px;}
+    main{max-width:100%; padding:0;}
+    .card{border:none;}
+    .print-only{display:block !important;}
+    thead th{background:#fff !important; color:#000 !important; border-bottom:1.5px solid #000;}
+    tbody td{border-bottom:1px solid #999;}
+    .sol-cell input{border:none; border-bottom:1px dotted #666; border-radius:0; background:#fff !important;}
+    .print-footer{margin-top:30px; padding-top:12px; border-top:1px solid #000; display:flex !important; justify-content:space-between;}
+  }
+  .print-footer{display:none;}
+</style>
+</head>
+<body>
+
+<!-- ============================== LOGIN ============================== -->
+<div id="loginView">
+  <form class="login-card" id="loginForm" autocomplete="on">
+    <h1>Attendance Analyser</h1>
+    <p class="sub">Pagarbook discrepancies, solutions and rectification</p>
+    <label><span class="field-label">Username</span><input type="text" id="loginUser" autocomplete="username" required /></label>
+    <label><span class="field-label">Password</span><input type="password" id="loginPass" autocomplete="current-password" required /></label>
+    <button class="btn" type="submit" id="loginBtn">Log in</button>
+    <p class="login-err" id="loginErr"></p>
+    <details id="serverDetails">
+      <summary>Server settings</summary>
+      <label style="margin-top:8px;"><span class="field-label">Apps Script web app URL</span>
+        <input type="url" id="serverUrl" placeholder="https://script.google.com/macros/s/.../exec" /></label>
+    </details>
+  </form>
+</div>
+
+<!-- ============================== APP ============================== -->
+<div id="appView" hidden>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="eyebrow">Pagarbook · Attendance</span><span class="title">Attendance Analyser</span></div>
+      <div class="top-right">
+        <select id="periodSelect" title="Attendance period"></select>
+        <span class="sync" id="syncState"><span class="dot"></span><span id="syncText">—</span></span>
+        <button class="linkbtn" id="syncBtn" title="Fetch latest from Google Drive">Sync</button>
+        <span id="whoami" style="color:#C7D2E6;"></span>
+        <button class="linkbtn" id="pwBtn">Password</button>
+        <button class="linkbtn" id="logoutBtn">Log out</button>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-view="dash" class="active">Dashboard</button>
+      <button data-view="list">Discrepancies</button>
+      <button data-view="analyse" data-roles="admin,office">New analysis</button>
+      <button data-view="users" data-roles="admin">Users</button>
+    </nav>
+  </div>
+
+  <main>
+    <!-- ---------- Dashboard ---------- -->
+    <section id="view-dash">
+      <div class="card" id="dashEmpty" hidden>
+        <div class="empty"><p>No attendance period saved yet.</p><p class="hint" id="dashEmptyHint"></p></div>
+      </div>
+      <div id="dashBody">
+        <div class="card">
+          <div class="card-head"><h2 id="dashTitle">Period</h2><span class="hint" id="dashMeta"></span></div>
+          <div class="stamps" id="dashKpis"></div>
+          <div style="padding:0 18px 16px;">
+            <div class="progress" id="dashProgress" style="height:14px;"></div>
+            <div class="legend" style="margin-top:8px;">
+              <span><i style="background:var(--sage)"></i>Rectified</span>
+              <span><i style="background:#D9AE45"></i>Solution entered, to rectify</span>
+              <span><i style="background:#E9E3D5"></i>Waiting for solution</span>
+            </div>
+          </div>
+          <div class="banner" id="dashClash" hidden></div>
+        </div>
+        <div class="grid" style="margin-top:18px;">
+          <div class="card">
+            <div class="card-head"><h2>By department</h2><span class="hint">Click a row to open its list</span></div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Department</th><th style="text-align:right">To answer</th><th style="text-align:right">To rectify</th><th style="text-align:right">Done</th><th>Progress</th></tr></thead>
+              <tbody id="dashDepts"></tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Still open, by type</h2><span class="hint">Not yet rectified</span></div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Type</th><th style="text-align:right">To answer</th><th style="text-align:right">To rectify</th><th style="text-align:right">Total open</th></tr></thead>
+              <tbody id="dashCats"></tbody>
+            </table></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:18px;">
+          <div class="card-head"><h2>All periods</h2></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Period</th><th>Files</th><th>Last update</th><th style="text-align:right">Open</th><th style="text-align:right">Done</th><th>Progress</th><th class="admin-only"></th></tr></thead>
+            <tbody id="dashPeriods"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Discrepancy list ---------- -->
+    <section id="view-list" hidden>
+      <div class="card">
+        <div class="print-only" style="padding:6px 0 10px;">
+          <h1 class="serif" style="font-size:20px; margin:0;">Attendance Discrepancy Report</h1>
+          <p style="margin:4px 0 0; font-size:12px;" id="printSub"></p>
+        </div>
+        <div class="card-head no-print">
+          <div class="seg" id="statusSeg">
+            <button data-s="open" class="active">To answer <span class="c"></span></button>
+            <button data-s="answered">To rectify in Pagarbook <span class="c"></span></button>
+            <button data-s="done">Rectified <span class="c"></span></button>
+            <button data-s="all">All <span class="c"></span></button>
+          </div>
+          <div class="btn-row">
+            <button class="btn secondary small" id="printBtn">Print</button>
+            <button class="btn secondary small" id="xlsxBtn">Download .xlsx</button>
+            <button class="btn small" id="copyBtn">Copy for Excel</button>
+          </div>
+        </div>
+        <div class="filters no-print">
+          <label><span class="field-label">Department</span><select id="fDept"></select></label>
+          <label><span class="field-label">Type</span><select id="fCat"></select></label>
+          <label class="grow"><span class="field-label">Search name / ID / issue</span><input type="text" id="fQ" placeholder="e.g. Ashok or L-105" /></label>
+        </div>
+        <p class="hint no-print" id="listHint" style="padding:10px 18px 0;"></p>
+        <div class="table-wrap" style="margin-top:8px;">
+          <table>
+            <thead><tr><th>Staff</th><th>Department</th><th>Date</th><th>Issue</th><th>Action</th><th>Solution</th><th id="tickHead" style="text-align:center">Rectified</th></tr></thead>
+            <tbody id="listBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="listEmpty" hidden><p>Nothing here.</p></div>
+        <div class="print-footer">
+          <span>Supervisor: _______________________</span><span>Date: _______________</span><span>Signature: _______________</span>
+        </div>
+      </div>
+      <datalist id="quickSolutions">
+        <option value="OT approved"></option>
+        <option value="OT not approved - normal day"></option>
+        <option value="Half day"></option>
+        <option value="Full day worked - forgot to punch"></option>
+        <option value="Full day worked"></option>
+        <option value="Sunday work approved"></option>
+        <option value="Leave approved"></option>
+        <option value="Absent - unpaid"></option>
+        <option value="Resigned - last working day "></option>
+        <option value="Joined on "></option>
+        <option value="Punch error - corrected"></option>
+      </datalist>
+    </section>
+
+    <!-- ---------- New analysis ---------- -->
+    <section id="view-analyse" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>1 · Bring in attendance data</h2>
+          <div class="seg"><button id="modeFileBtn" class="active">Upload files</button><button id="modePasteBtn">Paste data</button></div>
+        </div>
+        <div class="card-body">
+          <div id="fileMode">
+            <div class="dropzone" id="dropzone">
+              <h3>Drop your Pagarbook export(s) here</h3>
+              <p>or click to browse · .xlsx / .xls · select several files to combine them</p>
+              <input type="file" id="fileInput" accept=".xlsx,.xls" multiple hidden />
+            </div>
+          </div>
+          <div id="pasteMode" hidden>
+            <span class="field-label">Paste the attendance grid, including the header row</span>
+            <textarea class="pasteArea" id="pasteArea"></textarea>
+            <div class="btn-row" style="margin-top:10px; align-items:flex-end;">
+              <label><span class="field-label">Department (if not in the data)</span><input type="text" id="pasteDept" placeholder="e.g. Team 1" /></label>
+              <button class="btn" id="parsePasteBtn">Add pasted data</button>
+            </div>
+          </div>
+          <div class="file-list" id="fileList"></div>
+          <p class="hint" id="fileStatus" style="margin-top:12px;"></p>
+        </div>
+      </div>
+
+      <div class="card" id="combineCard" hidden>
+        <div class="card-head">
+          <h2>2 · Staff ID check</h2>
+          <div class="seg" id="combineFilter"><button data-f="attention" class="active">Needs attention</button><button data-f="all">All staff in more than one file</button></div>
+        </div>
+        <div class="stamps" id="combineStamps"></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Staff ID</th><th>Names found</th><th>Result</th><th>What to do</th><th>Treat as</th></tr></thead>
+          <tbody id="combineBody"></tbody>
+        </table></div>
+        <div class="empty" id="combineEmpty" hidden><p>Nothing needs attention. Every shared Staff ID belongs to the same person.</p></div>
+      </div>
+
+      <div class="card" id="saveCard" hidden>
+        <div class="card-head">
+          <h2>3 · Rules &amp; save</h2>
+          <div class="btn-row">
+            <button class="btn secondary" id="recalcBtn">Re-run with these rules</button>
+            <button class="btn secondary" id="downloadCombinedBtn">Download combined attendance</button>
+            <button class="btn" id="saveBtn">Save to Google Drive</button>
+          </div>
+        </div>
+        <div class="card-body config-grid">
+          <label><span class="field-label">Standard shift (hrs)</span><input type="number" id="cfgShift" value="12" step="0.25" /></label>
+          <label><span class="field-label">Tolerance (± min)</span><input type="number" id="cfgTolerance" value="30" step="5" /></label>
+          <label><span class="field-label">New-joiner grace (days)</span><input type="number" id="cfgGrace" value="3" step="1" /></label>
+          <label><span class="field-label">Year of the period</span><input type="number" id="cfgYear" step="1" /></label>
+        </div>
+        <div class="banner info" id="saveNote" hidden></div>
+        <div class="stamps" id="previewStamps"></div>
+      </div>
+    </section>
+
+    <!-- ---------- Users ---------- -->
+    <section id="view-users" hidden>
+      <div class="card">
+        <div class="card-head"><h2 id="userFormTitle">Add user</h2></div>
+        <div class="card-body">
+          <div class="form-grid">
+            <label><span class="field-label">Username</span><input type="text" id="uUsername" placeholder="e.g. rajesh" autocomplete="off" /></label>
+            <label><span class="field-label">Full name</span><input type="text" id="uName" /></label>
+            <label><span class="field-label">Role</span>
+              <select id="uRole">
+                <option value="supervisor">Supervisor – enters solutions</option>
+                <option value="office">Office – analyses, solutions, ticks</option>
+                <option value="admin">Admin – everything + users</option>
+              </select></label>
+            <label><span class="field-label">Departments (supervisor)</span><input type="text" id="uDepts" list="deptList" placeholder="Blank = all. Comma separated" /></label>
+            <label><span class="field-label" id="uPassLabel">Password</span><input type="password" id="uPass" autocomplete="new-password" /></label>
+            <label style="display:flex; gap:8px; align-items:center; margin-top:18px;"><input type="checkbox" id="uActive" checked /> Active (can log in)</label>
+          </div>
+          <div class="btn-row" style="margin-top:16px;">
+            <button class="btn" id="uSave">Save user</button>
+            <button class="btn secondary" id="uCancel" hidden>Cancel edit</button>
+          </div>
+          <datalist id="deptList"></datalist>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Users</h2><span class="hint">The built-in <b>admin</b> login uses the password in Script Properties</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Departments</th><th>Status</th><th></th></tr></thead>
+          <tbody id="usersBody"></tbody>
+        </table></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal-bg" id="pwModal" hidden>
+  <form class="modal" id="pwForm">
+    <h3>Change password</h3>
+    <label><span class="field-label">Current password</span><input type="password" id="pwOld" autocomplete="current-password" required /></label>
+    <label><span class="field-label">New password (6+ characters)</span><input type="password" id="pwNew" autocomplete="new-password" required /></label>
+    <label><span class="field-label">Repeat new password</span><input type="password" id="pwNew2" autocomplete="new-password" required /></label>
+    <p class="login-err" id="pwErr"></p>
+    <div class="btn-row"><button class="btn" type="submit">Change</button><button class="btn secondary" type="button" id="pwCancel">Cancel</button></div>
+  </form>
+</div>
+
+<div class="toast" id="toast"><span id="toastText"></span><button id="toastAction" hidden></button></div>
+
+<!-- Analysis engine: parsing, combining files and the discrepancy rules (no page access) -->
+<script id="core-logic">
+var AttendanceCore = (function(){
+
+  const UNMARKED = "-";
+  const ABSENT = "A";
+  const WO = "WO";
+
+  const DEFAULT_CONFIG = { standardShiftMin: 12*60, toleranceMin: 30, graceDays: 3, suspiciousHighMin: 16*60 };
+
+  // ---------------- Helpers ----------------
+  function clean(v){
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/\s+/g, " ").trim();
+  }
+
+  function hhmmToMinutes(s){
+    if (s === null || s === undefined) return null;
+    s = String(s).trim();
+    if (s === "" || s === "-" || s === "--") return null;
+    const m = s.match(/^(\d{1,3}):(\d{2})$/);
+    if (!m) return null;
+    return parseInt(m[1],10)*60 + parseInt(m[2],10);
+  }
+
+  function fmtMin(mins){
+    const h = Math.floor(mins/60), m = Math.round(mins%60);
+    return String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
+  }
+
+  function parseDayHeader(text){
+    if (!text) return null;
+    const m = String(text).match(/(\d{2})-(\d{2})/);
+    if (!m) return null;
+    return { day: parseInt(m[1],10), month: parseInt(m[2],10) };
+  }
+
+  function isoDate(y,m,d){ return new Date(Date.UTC(y, m-1, d)); }
+
+  // DD-MM-YYYY
+  function fmtDate(d){
+    if (!d) return "";
+    return String(d.getUTCDate()).padStart(2,"0") + "-" +
+           String(d.getUTCMonth()+1).padStart(2,"0") + "-" + d.getUTCFullYear();
+  }
+
+  function guessYear(text){
+    const m = String(text || "").match(/(20\d{2})/);
+    return m ? parseInt(m[1],10) : new Date().getFullYear();
+  }
+
+  // ---------------- Name matching ----------------
+  // Words that carry no identity on their own ("Kumar" is shared by half the staff)
+  const GENERIC = new Set(["kumar","kumari","kr","devi","md","mohd","mohammad","sri","shri","smt","mr","mrs","ms"]);
+
+  function nameTokens(name){
+    return clean(name).toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .split(" ")
+      .filter(t => t.length > 1 && !/\d/.test(t));   // drop "2", "T2", "BB2", single letters
+  }
+
+  // Exact comparison key: case/spacing/punctuation-insensitive but keeps "-1"/"-2" suffixes
+  function nameKey(name){
+    return clean(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
+  }
+
+  function editDistance(a, b){
+    const dp = Array.from({length:a.length+1}, (_,i) => [i].concat(new Array(b.length).fill(0)));
+    for (let j=1; j<=b.length; j++) dp[0][j] = j;
+    for (let i=1; i<=a.length; i++){
+      for (let j=1; j<=b.length; j++){
+        dp[i][j] = Math.min(dp[i-1][j]+1, dp[i][j-1]+1, dp[i-1][j-1] + (a[i-1]===b[j-1]?0:1));
+      }
+    }
+    return dp[a.length][b.length];
+  }
+
+  function tokenMatch(a, b){
+    if (a === b) return true;
+    if (a.length >= 4 && b.length >= 4){
+      if (a.startsWith(b) || b.startsWith(a)) return true;   // Maht / Mahto
+      if (editDistance(a, b) <= 1) return true;              // Maho / Mahto, Saday / Sady
+    }
+    return false;
+  }
+
+  // "same"    - identical apart from case/spacing ("ASHOK KUMAR" / "Ashok Kumar")
+  // "similar" - one name is a fuller form of the other ("Ashok" / "Ashok Kumar")
+  // "different" - the names point to different people ("Manoj Kumar" / "Suraj Kumar")
+  function compareNames(a, b){
+    if (nameKey(a) === nameKey(b)) return "same";
+    const ta = nameTokens(a), tb = nameTokens(b);
+    if (ta.length === 0 || tb.length === 0) return "different";
+    if (ta.join(" ") === tb.join(" ")) return "same";
+    const [shortT, longT] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+    const allFound = shortT.every(t => longT.some(u => tokenMatch(t, u)));
+    const hasRealWord = shortT.some(t => !GENERIC.has(t));
+    return (allFound && hasRealWord) ? "similar" : "different";
+  }
+
+  // ---------------- Parsing a sheet (array-of-arrays) into staff records ----------------
+  function findCol(header, re){
+    for (let c = 0; c < header.length; c++){
+      if (re.test(clean(header[c]))) return c;
+    }
+    return -1;
+  }
+
+  function parseSheet(rows, sheetName, fileLabel, opts){
+    opts = opts || {};
+    if (!rows || rows.length < 2) return [];
+
+    // The header row is the first row that has day columns like "S\n01-11"
+    let headerIdx = -1;
+    for (let r = 0; r < Math.min(rows.length, 10); r++){
+      const row = rows[r] || [];
+      if (row.some(v => /\b\d{2}-\d{2}\b/.test(clean(v)) && !/total/i.test(clean(v)))){ headerIdx = r; break; }
+    }
+    if (headerIdx < 0) return [];
+    const header = rows[headerIdx];
+
+    let labelCol = findCol(header, /^days/i);
+    if (labelCol < 0){
+      // find the column that holds "Attendance State" in the data rows
+      outer: for (let r = headerIdx+1; r < rows.length; r++){
+        const row = rows[r] || [];
+        for (let c = 0; c < row.length; c++){
+          if (/^attendance state$/i.test(clean(row[c]))){ labelCol = c; break outer; }
+        }
+      }
+    }
+    if (labelCol < 0) return [];
+
+    let nameCol = findCol(header, /staff\s*name/i);
+    if (nameCol < 0) nameCol = 1;
+    const idCol = findCol(header, /staff\s*id/i);
+    let deptCol = findCol(header, /department/i);
+    const typeCol = findCol(header, /staff\s*type/i);
+    if (deptCol < 0 && idCol < 0 && typeCol < 0 && labelCol === 4) deptCol = 2;   // old layout without labels
+
+    const dayCols = [];
+    for (let c = labelCol + 1; c < header.length; c++){
+      const v = clean(header[c]);
+      if (/total/i.test(v)) break;
+      const p = parseDayHeader(v);
+      if (p) dayCols.push({ col: c, header: header[c], day: p.day, month: p.month });
+    }
+    if (dayCols.length === 0) return [];
+
+    const staff = [];
+    for (let r = headerIdx + 1; r < rows.length; r++){
+      const row = rows[r] || [];
+      if (!/^attendance state$/i.test(clean(row[labelCol]))) continue;
+      const name = clean(row[nameCol]);
+      if (!name) continue;
+
+      // the IN / OUT / WH / OT / F rows follow until the next staff block
+      const sub = {};
+      for (let k = r + 1; k < Math.min(rows.length, r + 8); k++){
+        const lbl = clean((rows[k] || [])[labelCol]).toUpperCase();
+        if (lbl === "ATTENDANCE STATE") break;
+        if (lbl && !sub[lbl]) sub[lbl] = rows[k];
+      }
+      const pick = (lbl, c) => { const rr = sub[lbl]; return rr ? rr[c] : null; };
+
+      const days = {};
+      for (const dc of dayCols){
+        const key = dc.month * 100 + dc.day;
+        const st = clean(row[dc.col]);
+        days[key] = {
+          state: st === "" ? UNMARKED : st,
+          in: clean(pick("IN", dc.col)) || UNMARKED,
+          out: clean(pick("OUT", dc.col)) || UNMARKED,
+          wh: clean(pick("WH", dc.col)) || UNMARKED,
+          ot: clean(pick("OT", dc.col)) || UNMARKED,
+          f: clean(pick("F", dc.col)) || UNMARKED,
+        };
+      }
+
+      let dept = deptCol >= 0 ? clean(row[deptCol]) : "";
+      if (!dept && opts.defaultDept) dept = opts.defaultDept;
+
+      staff.push({
+        name,
+        id: idCol >= 0 ? clean(row[idCol]) : "",
+        dept,
+        staffType: typeCol >= 0 ? clean(row[typeCol]) : "",
+        file: fileLabel,
+        sheet: sheetName,
+        dayHeaders: dayCols.map(dc => ({ key: dc.month*100 + dc.day, header: dc.header, day: dc.day, month: dc.month })),
+        days,
+      });
+    }
+    return staff;
+  }
+
+  function parseWorkbook(sheetsData, fileLabel, opts){
+    let staff = [];
+    for (const s of sheetsData){
+      staff = staff.concat(parseSheet(s.rows, s.name, fileLabel, opts));
+    }
+    return staff;
+  }
+
+  // ---------------- Combining several files ----------------
+  function idKey(id){ return clean(id).toUpperCase().replace(/\s+/g, ""); }
+  function idPrefix(id){
+    const m = idKey(id).match(/^([A-Z0-9]+)-/);
+    return m ? m[1] : "";
+  }
+
+  function hasPunch(e){ return hhmmToMinutes(e.in) !== null || hhmmToMinutes(e.out) !== null; }
+  function bothPunches(e){ return hhmmToMinutes(e.in) !== null && hhmmToMinutes(e.out) !== null; }
+  function stateRank(st){
+    if (/P/i.test(st) && !/^-$/.test(st)) return 4;  // 1P, WO,P, HD/0.5P ...
+    if (/^WO$/i.test(st)) return 3;                 // weekly off beats an auto "A" in the other file
+    if (st && st !== UNMARKED) return 2;            // A, leave codes
+    return 1;                                       // unmarked
+  }
+  function describe(e){
+    return `${e.state} IN ${e.in} OUT ${e.out} WH ${e.wh}`;
+  }
+
+  // Pick the best record for one day from several files for the same person
+  function pickDay(entries, overlapLog){
+    if (entries.length === 1) return entries[0].e;
+    const withPunch = entries.filter(x => hasPunch(x.e));
+    if (withPunch.length === 1) return withPunch[0].e;
+    if (withPunch.length > 1){
+      const distinct = new Set(withPunch.map(x => describe(x.e)));
+      // prefer a complete IN+OUT pair, then the longer working hours
+      const best = withPunch.slice().sort((a,b) => {
+        const pa = bothPunches(a.e) ? 1 : 0, pb = bothPunches(b.e) ? 1 : 0;
+        if (pa !== pb) return pb - pa;
+        return (hhmmToMinutes(b.e.wh) || 0) - (hhmmToMinutes(a.e.wh) || 0);
+      })[0];
+      if (distinct.size > 1) overlapLog({ entries: withPunch, used: best });
+      return best.e;
+    }
+    return entries.slice().sort((a,b) => stateRank(b.e.state) - stateRank(a.e.state))[0].e;
+  }
+
+  function computeTotals(dayKeys, days){
+    let present = 0, absent = 0, half = 0, paid = 0, unmarked = 0, hours = 0, ot = 0, fine = 0;
+    for (const k of dayKeys){
+      const e = days[k];
+      const st = e.state;
+      if (/^(HD|0\.5P|½P)$/i.test(st)) half++;
+      else if (/WO/i.test(st) || /^(PL|L|CL|SL)$/i.test(st)) paid++;
+      else if (st === ABSENT) absent++;
+      else if (st === UNMARKED) unmarked++;
+      else if (/P/i.test(st)) present++;
+      hours += hhmmToMinutes(e.wh) || 0;
+      ot += hhmmToMinutes(e.ot) || 0;
+      fine += hhmmToMinutes(e.f) || 0;
+    }
+    return { present, absent, half, paid, unmarked, hours, ot, fine };
+  }
+
+  function chooseName(records){
+    // the fullest name wins ("Ashok Kumar" over "Ashok"); prefer normal case over ALL CAPS
+    return records.map(r => r.name).sort((a,b) => {
+      const ta = nameTokens(a).length, tb = nameTokens(b).length;
+      if (ta !== tb) return tb - ta;
+      const ca = a === a.toUpperCase() ? 1 : 0, cb = b === b.toUpperCase() ? 1 : 0;
+      if (ca !== cb) return ca - cb;
+      return 0;
+    })[0];
+  }
+
+  function clusterByName(records){
+    const clusters = [];
+    for (const r of records){
+      const c = clusters.find(cl => cl.some(x => compareNames(x.name, r.name) !== "different"));
+      if (c) c.push(r); else clusters.push([r]);
+    }
+    return clusters;
+  }
+
+  // files: [{label, staff:[...]}]; decisions: {groupKey: "merge"|"separate"}
+  function combine(files, decisions){
+    decisions = decisions || {};
+    const fileLabels = files.map(f => f.label);
+    const all = [];
+    files.forEach((f, fi) => f.staff.forEach(s => all.push(Object.assign({ fileIndex: fi }, s))));
+
+    // Union of all days across the files, in calendar order
+    const headerByKey = {};
+    all.forEach(s => s.dayHeaders.forEach(h => { if (!headerByKey[h.key]) headerByKey[h.key] = h; }));
+    let dayKeys = Object.keys(headerByKey).map(Number);
+    const months = new Set(dayKeys.map(k => Math.floor(k/100)));
+    const wraps = months.has(12) && months.has(1);
+    const sortKey = k => (wraps && Math.floor(k/100) < 6) ? k + 1200 : k;
+    dayKeys.sort((a,b) => sortKey(a) - sortKey(b));
+    const dayHeaders = dayKeys.map(k => headerByKey[k]);
+
+    // Department for files that have no Department column: learn it from the
+    // Staff ID prefix (L- = Loading, T1- = Team 1 ...) in the files that do.
+    const prefixVotes = {};
+    all.forEach(s => {
+      if (!s.dept) return;
+      const p = idPrefix(s.id); if (!p) return;
+      prefixVotes[p] = prefixVotes[p] || {};
+      prefixVotes[p][s.dept] = (prefixVotes[p][s.dept] || 0) + 1;
+    });
+    const deptByPrefix = {};
+    Object.keys(prefixVotes).forEach(p => {
+      deptByPrefix[p] = Object.entries(prefixVotes[p]).sort((a,b) => b[1]-a[1])[0][0];
+    });
+    const deptByIdKey = {};
+    all.forEach(s => { if (s.dept && s.id) deptByIdKey[idKey(s.id)] = s.dept; });
+    // per-file fallback: the most common inferred department in that file
+    const fileDeptVotes = {};
+    all.forEach(s => {
+      const d = s.dept || deptByIdKey[idKey(s.id)] || deptByPrefix[idPrefix(s.id)];
+      if (!d) return;
+      fileDeptVotes[s.fileIndex] = fileDeptVotes[s.fileIndex] || {};
+      fileDeptVotes[s.fileIndex][d] = (fileDeptVotes[s.fileIndex][d] || 0) + 1;
+    });
+    all.forEach(s => {
+      if (s.dept){ s.deptFrom = "file"; return; }
+      let d = deptByIdKey[idKey(s.id)];
+      if (d){ s.dept = d; s.deptFrom = "same ID in other file"; return; }
+      d = deptByPrefix[idPrefix(s.id)];
+      if (d){ s.dept = d; s.deptFrom = `ID prefix ${idPrefix(s.id)}-`; return; }
+      const votes = fileDeptVotes[s.fileIndex];
+      if (votes){ s.dept = Object.entries(votes).sort((a,b) => b[1]-a[1])[0][0]; s.deptFrom = "most common in this file"; return; }
+      s.dept = s.file || "Unassigned"; s.deptFrom = "file name";
+    });
+
+    // Group by Staff ID (or by name if a file has no Staff ID column)
+    const groups = new Map();
+    all.forEach(s => {
+      const key = s.id ? "ID:" + idKey(s.id) : "NM:" + nameKey(s.name);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(s);
+    });
+
+    const people = [];
+    const checks = [];
+    const overlaps = [];
+
+    function buildPerson(records, comment){
+      const days = {};
+      for (const k of dayKeys){
+        const entries = records.filter(r => r.days[k]).map(r => ({ r, e: r.days[k] }));
+        if (entries.length === 0){
+          days[k] = { state: UNMARKED, in: UNMARKED, out: UNMARKED, wh: UNMARKED, ot: UNMARKED, f: UNMARKED };
+          continue;
+        }
+        days[k] = pickDay(entries, info => overlaps.push({
+          id: records[0].id, name: chooseName(records), dayHeader: headerByKey[k],
+          options: info.entries.map(x => ({ file: fileLabels[x.r.fileIndex], text: describe(x.e) })),
+          used: describe(info.used.e), usedFile: fileLabels[info.used.r.fileIndex],
+        }));
+      }
+      const deptRec = records.find(r => r.deptFrom === "file") || records[0];
+      const sourceIdx = Array.from(new Set(records.map(r => r.fileIndex))).sort();
+      const p = {
+        name: chooseName(records),
+        id: records[0].id,
+        dept: deptRec.dept,
+        staffType: (records.find(r => r.staffType) || {}).staffType || "",
+        sources: sourceIdx.map(i => fileLabels[i]),
+        days,
+        comment: comment || "",
+      };
+      p.totals = computeTotals(dayKeys, days);
+      people.push(p);
+      return p;
+    }
+
+    for (const [key, records] of groups){
+      if (records.length === 1){
+        buildPerson(records, files.length > 1 ? `Only in ${fileLabels[records[0].fileIndex]}` : "");
+        continue;
+      }
+      const clusters = clusterByName(records);
+      const exact = records.every(r => nameKey(r.name) === nameKey(records[0].name));
+      const kind = clusters.length > 1 ? "conflict" : (exact ? "same" : "similar");
+      const auto = clusters.length > 1 ? "separate" : "merge";
+      const decision = decisions[key] || auto;
+      const sameFile = new Set(records.map(r => r.fileIndex)).size < records.length;
+
+      let parts;
+      if (decision === "merge") parts = [records];
+      else parts = clusters.length > 1 ? clusters : records.map(r => [r]);
+
+      const builtNames = [];
+      parts.forEach(part => {
+        let comment;
+        if (parts.length === 1) comment = kind === "similar" ? `Merged - name differs between files (${Array.from(new Set(records.map(r => r.name))).join(" / ")})` : "";
+        else comment = `Staff ID ${records[0].id} is shared by different people (${clusters.map(c => chooseName(c)).join(" / ")}) - kept separate, change one Staff ID in Pagarbook`;
+        const p = buildPerson(part, comment);
+        builtNames.push(p.name);
+      });
+
+      checks.push({
+        key, id: records[0].id, kind, auto, decision, sameFile,
+        records: records.map(r => ({ name: r.name, dept: r.dept, deptFrom: r.deptFrom, file: fileLabels[r.fileIndex], sheet: r.sheet })),
+        clusters: clusters.map(c => chooseName(c)),
+      });
+    }
+
+    // Same name but different Staff IDs - may be a person registered twice
+    const byName = new Map();
+    people.forEach(p => {
+      const k = nameKey(p.name);
+      if (!byName.has(k)) byName.set(k, []);
+      byName.get(k).push(p);
+    });
+    for (const [k, ps] of byName){
+      const ids = Array.from(new Set(ps.map(p => idKey(p.id))));
+      if (ids.length > 1){
+        checks.push({
+          key: "NAME:" + k, id: ps.map(p => p.id || "(no ID)").join(" / "), kind: "samename",
+          auto: null, decision: null,
+          records: ps.map(p => ({ name: p.name, dept: p.dept, file: p.sources.join(" + "), id: p.id })),
+        });
+      }
+    }
+
+    const order = { conflict: 0, samename: 1, similar: 2, same: 3 };
+    checks.sort((a,b) => (order[a.kind] - order[b.kind]) || String(a.id).localeCompare(String(b.id)));
+
+    return { people, checks, overlaps, dayKeys, dayHeaders, fileLabels };
+  }
+
+  // ---------------- Rule engine ----------------
+  function toEmployee(person, dayHeaders, year){
+    const days = dayHeaders.map(h => {
+      const e = person.days[h.key];
+      // a December -> January period: the January days belong to the next year
+      const y = (dayHeaders.some(x => x.month === 12) && h.month < 6) ? year + 1 : year;
+      return {
+        date: isoDate(y, h.month, h.day),
+        state: e.state || UNMARKED,
+        inVal: e.in, outVal: e.out,
+        whMin: hhmmToMinutes(e.wh),
+      };
+    });
+    return { name: person.name, id: person.id, department: person.dept, days };
+  }
+
+  function analyzeEmployee(emp, CONFIG){
+    const issues = [];
+    const days = emp.days;
+    const name = emp.name, dept = emp.department, staffId = emp.id;
+    const add = (o) => issues.push(Object.assign({ name, staffId, department: dept, status: "" }, o));
+
+    const presentLike = days.filter(d => d.state !== UNMARKED && d.state !== ABSENT && d.state !== WO);
+    if (presentLike.length === 0){
+      add({ date: null, issue: "No working days recorded for entire period",
+            action: "Auto-marked - not in company (resigned / not yet joined)", status: "Auto-Resolved", cat: "auto" });
+      return issues;
+    }
+
+    // Dates already "explained" by the new-joiner / resignation summary rows
+    const coveredDates = new Set();
+
+    // Leading gap (new joiner): unmarked or Absent days; a Sunday (WO) inside the run doesn't break it
+    let leadingGap = 0, leadingHasUnmarked = false, firstDate = null;
+    for (const d of days){
+      if (d.state === UNMARKED || d.state === ABSENT){
+        leadingGap++; coveredDates.add(d.date.getTime());
+        if (d.state === UNMARKED) leadingHasUnmarked = true;
+      } else if (d.state === WO){
+        continue;
+      } else { firstDate = d.date; break; }
+    }
+    if (leadingGap > CONFIG.graceDays){
+      add({ date: firstDate,
+            issue: `No work recorded for first ${leadingGap} day(s) of period (unmarked/Absent before first real attendance)`,
+            action: "Confirm actual joining date", cat: "new" });
+    } else if (leadingGap > 0 && leadingHasUnmarked){
+      add({ date: firstDate, issue: `Not marked for first ${leadingGap} day(s) of period`,
+            action: "Confirm if late marking or new joiner (within normal grace)", cat: "new" });
+    }
+
+    // Trailing gap (resignation / last working day)
+    let trailingGap = 0, trailingHasUnmarked = false, lastActiveDate = null;
+    for (let i = days.length - 1; i >= 0; i--){
+      const st = days[i].state;
+      if (st === UNMARKED || st === ABSENT){
+        trailingGap++; coveredDates.add(days[i].date.getTime());
+        if (st === UNMARKED) trailingHasUnmarked = true;
+      } else if (st === WO){
+        continue;
+      } else { lastActiveDate = days[i].date; break; }
+    }
+    if (trailingGap > CONFIG.graceDays){
+      add({ date: lastActiveDate,
+            issue: `No work recorded for last ${trailingGap} day(s) of period (unmarked/Absent since last real attendance)`,
+            action: "Confirm last working day / possible resignation", cat: "resign" });
+    } else if (trailingGap > 0 && trailingHasUnmarked){
+      add({ date: lastActiveDate, issue: `Not marked for last ${trailingGap} day(s) of period`,
+            action: "Confirm if extended leave or resignation (within normal grace)", cat: "resign" });
+    }
+
+    for (const d of days){
+      const { state, date } = d;
+      if (!date) continue;
+      if (coveredDates.has(date.getTime())) continue;
+
+      if (state.indexOf("WO") !== -1 && state.indexOf("P") !== -1){
+        add({ date, issue: "Marked present on Sunday (weekly off)", action: "Confirm working on Sunday", cat: "wo" });
+      }
+
+      if (state === ABSENT){
+        add({ date, issue: "Absent", action: "Verify if on leave / confirm absence", cat: "abs" });
+        continue;
+      }
+
+      const inMissing = hhmmToMinutes(d.inVal) === null;
+      const outMissing = hhmmToMinutes(d.outVal) === null;
+
+      if (inMissing && outMissing){
+        if (state === UNMARKED || state === WO) continue;
+        add({ date, issue: "Marked present but no IN/OUT punches recorded", action: "Confirm attendance manually", cat: "punch" });
+        continue;
+      }
+
+      if (inMissing && !outMissing){
+        add({ date, issue: "Logged out, but no login (IN) recorded", action: "Confirm full day worked", cat: "punch" });
+      } else if (outMissing && !inMissing){
+        add({ date, issue: "Logged in, but not logged out", action: "Confirm full day worked", cat: "punch" });
+      } else {
+        const wh = d.whMin;
+        if (wh !== null){
+          const diff = wh - CONFIG.standardShiftMin;
+          if (wh >= CONFIG.suspiciousHighMin){
+            add({ date, issue: `Working hours ${fmtMin(wh)} - unusually high, likely a system calculation error (punch mismatch)`,
+                  action: "Confirm actual overtime worked - verify against punch device", cat: "ot" });
+          } else if (diff > CONFIG.toleranceMin){
+            add({ date, issue: `Worked ${fmtMin(wh)} H. Over By ${fmtMin(diff)} H`, action: "Confirm & approve overtime (OT)", cat: "ot" });
+          } else if (diff < -CONFIG.toleranceMin){
+            add({ date, issue: `Worked ${fmtMin(wh)} H. Short By ${fmtMin(-diff)} H`, action: "Confirm if Half Day / early leave", cat: "half" });
+          }
+        }
+      }
+    }
+    return issues;
+  }
+
+  function analyzePeople(combined, year, config){
+    const CONFIG = Object.assign({}, DEFAULT_CONFIG, config || {});
+    let issues = [];
+    for (const p of combined.people){
+      issues = issues.concat(analyzeEmployee(toEmployee(p, combined.dayHeaders, year), CONFIG));
+    }
+    issues.sort((a,b) => {
+      if (a.department !== b.department) return a.department < b.department ? -1 : 1;
+      if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+      if (a.staffId !== b.staffId) return a.staffId < b.staffId ? -1 : 1;
+      const ad = a.date ? a.date.getTime() : -Infinity;
+      const bd = b.date ? b.date.getTime() : -Infinity;
+      return ad - bd;
+    });
+    return issues;
+  }
+
+  // ---------------- Combined attendance workbook (array-of-arrays per sheet) ----------------
+  function combinedSheets(combined){
+    const { people, dayKeys, dayHeaders, checks, overlaps, fileLabels } = combined;
+    const deptOrder = [];
+    people.forEach(p => { if (!deptOrder.includes(p.dept)) deptOrder.push(p.dept); });
+
+    const head = ["S.N.","Staff Name","Staff ID","Department","Staff Type","Days  ➡️"]
+      .concat(dayHeaders.map(h => h.header))
+      .concat(["Total \nHours","Total \nPresent","Total \nAbsent","Total \nHalf \nDays","Total \nPaid \nLeaves","Total \nUnmarked","Total \nOvertime \nHours","Total \nFine \nHours"]);
+
+    const sheets = [];
+    let sn = 0;
+    for (const dept of deptOrder){
+      const aoa = [head];
+      people.filter(p => p.dept === dept).forEach(p => {
+        sn++;
+        const t = p.totals;
+        const blank = ["","","","",""];
+        const rowOf = (label, field) => dayKeys.map(k => p.days[k][field]);
+        aoa.push([sn, p.name, p.id, p.dept, p.staffType, "Attendance State"].concat(rowOf("", "state"))
+          .concat(["", t.present, t.absent, t.half, t.paid, t.unmarked, fmtMin(t.ot), fmtMin(t.fine)]));
+        aoa.push([""].concat(blank.slice(1), ["IN"]).concat(rowOf("", "in")));
+        aoa.push([""].concat(blank.slice(1), ["OUT"]).concat(rowOf("", "out")));
+        aoa.push([""].concat(blank.slice(1), ["WH"]).concat(rowOf("", "wh")).concat([fmtMin(t.hours)]));
+        aoa.push([""].concat(blank.slice(1), ["OT"]).concat(rowOf("", "ot")).concat([fmtMin(t.ot)]));
+        aoa.push([""].concat(blank.slice(1), ["F"]).concat(rowOf("", "f")).concat([fmtMin(t.fine)]));
+      });
+      sheets.push({ name: String(dept).replace(/[\\\/\?\*\[\]:]/g, " ").slice(0, 31), aoa, dayCount: dayKeys.length });
+    }
+
+    // Merge Notes
+    const notes = [["Combined from: " + fileLabels.join("  +  ")], [],
+      ["Staff ID","Name","Department","Source","Present","Absent","Paid leave/WO","Unmarked","Total Hours","Comment"]];
+    people.slice().sort((a,b) => String(a.id).localeCompare(String(b.id), undefined, {numeric:true})).forEach(p => {
+      const t = p.totals;
+      notes.push([p.id, p.name, p.dept, p.sources.length > 1 ? "both: " + p.sources.join(" + ") : p.sources[0],
+        t.present, t.absent, t.paid, t.unmarked, fmtMin(t.hours), p.comment]);
+    });
+    const attention = checks.filter(c => c.kind !== "same");
+    if (attention.length){
+      notes.push([], ["Staff ID checks:"], ["Staff ID","Result","Names found","Treated as"]);
+      attention.forEach(c => notes.push([c.id, KIND_TEXT[c.kind],
+        c.records.map(r => `${r.name} (${r.dept}, ${r.file})`).join("  |  "),
+        c.decision === "merge" ? "Same person - merged" : c.decision === "separate" ? "Different people - kept separate" : "-"]));
+    }
+    if (overlaps.length){
+      notes.push([], ["Days where more than one file had a different punch record:"],
+        ["Staff ID","Name","Day","Records found","Used"]);
+      overlaps.forEach(o => notes.push([o.id, o.name, clean(o.dayHeader.header),
+        o.options.map(x => `${x.file}: ${x.text}`).join("  |  "), `${o.usedFile}: ${o.used}`]));
+    }
+    sheets.push({ name: "Merge Notes", aoa: notes, notes: true });
+    return sheets;
+  }
+
+  const KIND_TEXT = {
+    conflict: "Different people share this Staff ID",
+    samename: "Same name, different Staff IDs",
+    similar: "Same person, name spelt differently",
+    same: "Same person",
+  };
+
+  return {
+    UNMARKED, ABSENT, WO, DEFAULT_CONFIG, KIND_TEXT,
+    hhmmToMinutes, fmtMin, fmtDate, guessYear,
+    compareNames, nameTokens, parseSheet, parseWorkbook, combine,
+    analyzePeople, analyzeEmployee, toEmployee, combinedSheets,
+  };
+})();
+if (typeof module !== "undefined") module.exports = AttendanceCore;
+</script>
+
+<script>
+/* ======================================================================
+   SETTINGS – paste your Apps Script web app URL here before publishing.
+   (Users can also set it under "Server settings" on the login screen.)
+   ====================================================================== */
+const API_URL = "";
+
+(function(){
+  const C = AttendanceCore;
+  const $ = id => document.getElementById(id);
+  const CAT_LABEL = { ot:"OT", half:"Half Day", abs:"Absent", wo:"Worked Sunday", new:"New Joiner", resign:"Resignation?", punch:"Missing Punch", auto:"Not In Company" };
+  const CAT_ORDER = ["ot","half","punch","abs","wo","new","resign","auto"];
+  const ROLE_LABEL = { admin:"Admin", office:"Office", supervisor:"Supervisor" };
+
+  const S = {
+    url: "", token: "", user: null,
+    periods: [], periodId: "", period: null,
+    view: "dash",
+    f: { status:"open", dept:"All", cat:"All", q:"" },
+    syncing: false, lastSync: null, users: [],
+  };
+
+  // ---------------- storage (best effort) ----------------
+  const store = {
+    get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+    set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+    del(k){ try { localStorage.removeItem(k); } catch(e){} },
+  };
+
+  // ---------------- helpers ----------------
+  function esc(s){ return String(s === null || s === undefined ? "" : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function isoToDmy(iso){ if (!iso) return ""; const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : iso; }
+  function dateToIso(d){ return d ? d.toISOString().slice(0,10) : ""; }
+  function stamp(iso){
+    if (!iso) return "";
+    const d = new Date(iso);
+    return isoToDmy(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`) + " " + String(d.getHours()).padStart(2,'0') + ":" + String(d.getMinutes()).padStart(2,'0');
+  }
+  function can(...roles){ return S.user && roles.includes(S.user.role); }
+  function pct(n, d){ return d ? Math.round(n * 100 / d) : 0; }
+
+  let toastTimer = null;
+  function toast(msg, actionLabel, action){
+    $('toastText').textContent = msg;
+    const b = $('toastAction');
+    if (actionLabel){ b.hidden = false; b.textContent = actionLabel; b.onclick = () => { $('toast').classList.remove('show'); action(); }; }
+    else b.hidden = true;
+    $('toast').classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $('toast').classList.remove('show'), actionLabel ? 6000 : 3000);
+  }
+
+  function setSync(state, text){
+    $('syncState').className = "sync " + (state || "");
+    $('syncText').textContent = text;
+  }
+
+  // ---------------- API ----------------
+  async function api(action, data){
+    if (!S.url) throw new Error("Server URL not set – open Server settings on the login screen");
+    let res;
+    try {
+      // text/plain keeps this a "simple" request, which Apps Script accepts without CORS preflight
+      res = await fetch(S.url, { method:"POST", body: JSON.stringify(Object.assign({}, data, { action, token: S.token })) });
+    } catch (e){ throw new Error("Can't reach the server. Check the internet connection."); }
+    let out;
+    try { out = await res.json(); } catch (e){ throw new Error("Unexpected server reply. Check the web app URL and that it is deployed for 'Anyone'."); }
+    if (!out.ok){
+      if (out.error === "LOGIN_REQUIRED"){ logout("Session expired – please log in again."); throw new Error("Session expired"); }
+      throw new Error(out.error || "Server error");
+    }
+    return out;
+  }
+
+  // ---------------- login ----------------
+  function initLogin(){
+    const saved = store.get("aa_session") || {};
+    S.url = API_URL || saved.url || "";
+    $('serverUrl').value = S.url;
+    if (API_URL) $('serverDetails').hidden = true;
+    else if (!S.url) $('serverDetails').open = true;
+    if (saved.token && saved.user && S.url){
+      S.token = saved.token; S.user = saved.user;
+      enterApp();
+    }
+  }
+
+  $('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('loginErr').textContent = "";
+    if (!API_URL) S.url = $('serverUrl').value.trim();
+    $('loginBtn').disabled = true; $('loginBtn').textContent = "Logging in…";
+    try {
+      const out = await api("login", { username: $('loginUser').value, password: $('loginPass').value });
+      S.token = out.token; S.user = out.user;
+      store.set("aa_session", { url: S.url, token: S.token, user: S.user });
+      $('loginPass').value = "";
+      enterApp();
+    } catch (err){
+      $('loginErr').textContent = err.message;
+    } finally {
+      $('loginBtn').disabled = false; $('loginBtn').textContent = "Log in";
+    }
+  });
+
+  function logout(msg){
+    S.token = ""; S.user = null; S.period = null; S.periods = [];
+    S.view = "dash"; S.f = { status:"open", dept:"All", cat:"All", q:"" };
+    const saved = store.get("aa_session") || {};
+    store.set("aa_session", { url: saved.url || S.url });
+    $('appView').hidden = true; $('loginView').hidden = false;
+    $('loginErr').textContent = msg || "";
+  }
+  $('logoutBtn').addEventListener('click', () => logout());
+
+  function enterApp(){
+    $('loginView').hidden = true; $('appView').hidden = false;
+    $('whoami').textContent = `${S.user.name} · ${ROLE_LABEL[S.user.role] || S.user.role}`;
+    $('pwBtn').hidden = S.user.username === "admin";
+    document.querySelectorAll('#nav button[data-roles]').forEach(b => { b.hidden = !b.getAttribute('data-roles').split(',').includes(S.user.role); });
+    document.querySelectorAll('.admin-only').forEach(el => el.hidden = !can('admin'));
+    S.periodId = (store.get("aa_period") || "");
+    const cached = S.periodId && store.get("aa_cache_" + S.periodId);
+    if (cached){ S.period = cached; render(); }
+    showView(S.view);
+    sync();
+  }
+
+  // ---------------- sync ----------------
+  async function sync(quiet){
+    if (S.syncing || !S.user) return;
+    S.syncing = true;
+    setSync("busy", "Syncing…");
+    try {
+      const out = await api("listPeriods", {});
+      S.periods = out.periods || [];
+      if (!S.periods.some(p => p.id === S.periodId)) S.periodId = S.periods.length ? S.periods[0].id : "";
+      if (S.periodId){
+        const p = await api("getPeriod", { id: S.periodId });
+        S.period = p.period;
+        store.set("aa_cache_" + S.periodId, S.period);
+        store.set("aa_period", S.periodId);
+      } else S.period = null;
+      S.lastSync = new Date();
+      setSync("", "Synced " + String(S.lastSync.getHours()).padStart(2,'0') + ":" + String(S.lastSync.getMinutes()).padStart(2,'0'));
+      render();
+    } catch (err){
+      setSync("err", "Offline");
+      if (!quiet) toast(err.message);
+    } finally { S.syncing = false; }
+  }
+  $('syncBtn').addEventListener('click', () => sync());
+  setInterval(() => {
+    if (!S.user || document.hidden) return;
+    const a = document.activeElement;
+    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT")) return;
+    if (S.view === "dash" || S.view === "list") sync(true);
+  }, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.user && S.lastSync && Date.now() - S.lastSync > 30000) sync(true); });
+
+  $('periodSelect').addEventListener('change', async e => {
+    S.periodId = e.target.value;
+    const cached = store.get("aa_cache_" + S.periodId);
+    if (cached){ S.period = cached; render(); }
+    await sync();
+  });
+
+  // ---------------- navigation ----------------
+  document.querySelectorAll('#nav button').forEach(b => b.addEventListener('click', () => showView(b.getAttribute('data-view'))));
+  function showView(v){
+    if (v === "analyse" && !can('admin','office')) v = "dash";
+    if (v === "users" && !can('admin')) v = "dash";
+    S.view = v;
+    ["dash","list","analyse","users"].forEach(x => $('view-' + x).hidden = x !== v);
+    document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.getAttribute('data-view') === v));
+    if (v === "users") loadUsers();
+    render();
+  }
+
+  function render(){
+    renderPeriodSelect();
+    if (S.view === "dash") renderDash();
+    if (S.view === "list") renderList();
+  }
+
+  function renderPeriodSelect(){
+    const sel = $('periodSelect');
+    if (!S.periods.length){ sel.innerHTML = `<option>No periods yet</option>`; sel.disabled = true; return; }
+    sel.disabled = false;
+    sel.innerHTML = S.periods.map(p => {
+      const c = p.counts || {};
+      return `<option value="${esc(p.id)}" ${p.id === S.periodId ? 'selected' : ''}>${esc(isoToDmy(p.start))} to ${esc(isoToDmy(p.end))} · ${pct(c.done, c.total)}% done</option>`;
+    }).join('');
+  }
+
+  // ---------------- counts ----------------
+  function counts(issues){
+    const c = { total:0, open:0, answered:0, done:0 };
+    issues.forEach(i => { c.total++; c[i.status] = (c[i.status]||0) + 1; });
+    return c;
+  }
+  function progressBar(c){
+    const d = pct(c.done, c.total), a = pct(c.answered, c.total);
+    return `<div class="progress" title="${d}% rectified, ${a}% waiting to rectify"><span class="p-done" style="width:${d}%"></span><span class="p-ans" style="width:${a}%"></span></div>`;
+  }
+
+  // ---------------- dashboard ----------------
+  function renderDash(){
+    const has = !!S.period;
+    $('dashEmpty').hidden = has; $('dashBody').hidden = !has;
+    $('dashEmptyHint').textContent = can('admin','office') ? "Open “New analysis”, upload the Pagarbook export(s) and save to Google Drive." : "Ask the office to upload the first attendance analysis.";
+    if (!has) return;
+    const p = S.period, iss = p.issues, c = counts(iss);
+    $('dashTitle').textContent = `${isoToDmy(p.start)} to ${isoToDmy(p.end)}`;
+    $('dashMeta').textContent = `Updated ${stamp(p.updatedAt)} by ${p.updatedBy} · ${(p.sources||[]).join(' + ')}`;
+    $('dashKpis').innerHTML = `
+      <div class="stamp click" data-go="all"><div class="n c-navy">${c.total}</div><div class="lbl">Total flagged</div></div>
+      <div class="stamp click" data-go="open"><div class="n c-open">${c.open}</div><div class="lbl">Waiting for solution</div></div>
+      <div class="stamp click" data-go="answered"><div class="n c-ans">${c.answered}</div><div class="lbl">To rectify in Pagarbook</div></div>
+      <div class="stamp click" data-go="done"><div class="n c-done">${c.done}</div><div class="lbl">Rectified</div></div>
+      <div class="stamp"><div class="n c-navy">${pct(c.done, c.total)}%</div><div class="lbl">Complete</div></div>`;
+    $('dashKpis').querySelectorAll('[data-go]').forEach(el => el.addEventListener('click', () => openList({ status: el.getAttribute('data-go'), dept:"All", cat:"All" })));
+    $('dashProgress').innerHTML = progressBar(c).replace(/^<div class="progress"[^>]*>|<\/div>$/g, '');
+
+    const clashes = (p.checks || []).filter(x => x.kind === "conflict" && x.decision === "separate");
+    $('dashClash').hidden = !clashes.length;
+    if (clashes.length) $('dashClash').innerHTML = `<strong>Staff ID clash:</strong> ${clashes.map(x => `${esc(x.id)} is used for ${x.clusters.map(esc).join(' and ')}`).join('; ')}. Change the Staff ID of one person in Pagarbook.`;
+
+    const depts = Array.from(new Set(iss.map(i => i.department))).sort();
+    $('dashDepts').innerHTML = depts.map(d => {
+      const dc = counts(iss.filter(i => i.department === d));
+      return `<tr class="clickable" data-dept="${esc(d)}"><td>${esc(d)}</td><td class="num c-open">${dc.open}</td><td class="num c-ans">${dc.answered}</td><td class="num c-done">${dc.done}</td><td>${progressBar(dc)}</td></tr>`;
+    }).join('');
+    $('dashDepts').querySelectorAll('tr').forEach(tr => tr.addEventListener('click', () => openList({ status: "open", dept: tr.getAttribute('data-dept'), cat:"All" })));
+
+    const live = iss.filter(i => i.status !== "done");
+    const catRows = CAT_ORDER.map(k => {
+      const ci = live.filter(i => i.cat === k);
+      if (!ci.length) return "";
+      return `<tr class="clickable" data-cat="${k}"><td><span class="tag ${k}">${CAT_LABEL[k]}</span></td><td class="num">${ci.filter(i => i.status === "open").length}</td><td class="num">${ci.filter(i => i.status === "answered").length}</td><td class="num"><b>${ci.length}</b></td></tr>`;
+    }).join('');
+    $('dashCats').innerHTML = catRows || `<tr><td colspan="4" class="hint">Everything is rectified.</td></tr>`;
+    $('dashCats').querySelectorAll('tr[data-cat]').forEach(tr => tr.addEventListener('click', () => openList({ status: "all", dept:"All", cat: tr.getAttribute('data-cat'), liveOnly: true })));
+
+    $('dashPeriods').innerHTML = S.periods.map(pp => {
+      const pc = pp.counts || {};
+      return `<tr class="clickable" data-id="${esc(pp.id)}"><td><b>${esc(isoToDmy(pp.start))} to ${esc(isoToDmy(pp.end))}</b></td><td class="hint">${esc((pp.sources||[]).join(' + '))}</td>
+        <td class="hint">${esc(stamp(pp.updatedAt))} · ${esc(pp.updatedBy||'')}</td>
+        <td class="num">${(pc.open||0) + (pc.answered||0)}</td><td class="num">${pc.done||0}</td><td>${progressBar({ total: pc.total||0, done: pc.done||0, answered: pc.answered||0 })}</td>
+        <td class="admin-only" ${can('admin') ? '' : 'hidden'}><button class="btn danger small" data-del="${esc(pp.id)}">Delete</button></td></tr>`;
+    }).join('');
+    $('dashPeriods').querySelectorAll('tr[data-id]').forEach(tr => tr.addEventListener('click', e => {
+      if (e.target.closest('[data-del]')) return;
+      $('periodSelect').value = tr.getAttribute('data-id');
+      $('periodSelect').dispatchEvent(new Event('change'));
+    }));
+    $('dashPeriods').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      const id = b.getAttribute('data-del');
+      if (!confirm(`Delete the period ${id.replace('_',' to ')} and all its solutions from Google Drive?`)) return;
+      try { await api("deletePeriod", { id }); store.del("aa_cache_" + id); toast("Period deleted"); sync(); }
+      catch (err){ toast(err.message); }
+    }));
+  }
+
+  // ---------------- discrepancy list ----------------
+  function openList(f){
+    S.f = Object.assign({ q:"", liveOnly:false }, f);
+    $('fQ').value = "";
+    showView("list");
+  }
+
+  function filtered(statusOverride){
+    if (!S.period) return [];
+    const f = S.f, q = f.q.toLowerCase();
+    const st = statusOverride || f.status;
+    return S.period.issues.filter(i =>
+      (st === "all" || i.status === st) &&
+      (!f.liveOnly || i.status !== "done") &&
+      (f.dept === "All" || i.department === f.dept) &&
+      (f.cat === "All" || i.cat === f.cat) &&
+      (!q || `${i.name} ${i.staffId} ${i.issue} ${i.solution||''}`.toLowerCase().includes(q))
+    ).sort((a,b) => (a.department > b.department ? 1 : a.department < b.department ? -1 : 0) || (a.name > b.name ? 1 : a.name < b.name ? -1 : 0) || String(a.date).localeCompare(String(b.date)));
+  }
+
+  function renderList(){
+    const p = S.period;
+    const depts = p ? Array.from(new Set(p.issues.map(i => i.department))).sort() : [];
+    $('fDept').innerHTML = `<option value="All">All departments</option>` + depts.map(d => `<option ${d === S.f.dept ? 'selected':''}>${esc(d)}</option>`).join('');
+    $('fCat').innerHTML = `<option value="All">All types</option>` + CAT_ORDER.map(k => `<option value="${k}" ${k === S.f.cat ? 'selected':''}>${CAT_LABEL[k]}</option>`).join('');
+
+    document.querySelectorAll('#statusSeg button').forEach(b => {
+      const s = b.getAttribute('data-s');
+      b.classList.toggle('active', s === S.f.status && !S.f.liveOnly || (S.f.liveOnly && s === "all"));
+      const saveLive = S.f.liveOnly; S.f.liveOnly = false;
+      b.querySelector('.c').textContent = p ? `(${filtered(s).length})` : "";
+      S.f.liveOnly = saveLive;
+    });
+
+    const canTick = can('admin','office');
+    $('tickHead').textContent = canTick ? "Rectified ✓" : "Status";
+    const hints = {
+      open: "Enter what was decided for each item. It then moves to “To rectify in Pagarbook”.",
+      answered: canTick ? "Make the change in Pagarbook, then tick the box. The item disappears from this list." : "The office will make these changes in Pagarbook.",
+      done: "Already rectified. Untick to bring an item back.",
+      all: S.f.liveOnly ? "Everything not yet rectified." : "Every flagged item in this period.",
+    };
+    $('listHint').textContent = p ? hints[S.f.status] : "No period loaded.";
+    $('printSub').textContent = p ? `Period ${isoToDmy(p.start)} to ${isoToDmy(p.end)} · ${S.f.dept === 'All' ? 'All departments' : S.f.dept} · printed ${stamp(new Date().toISOString())}` : "";
+
+    const rows = filtered();
+    $('listEmpty').hidden = rows.length > 0;
+    $('listBody').innerHTML = rows.map(i => {
+      const tick = canTick
+        ? `<input type="checkbox" class="tick" data-tick="${esc(i.id)}" ${i.status === 'done' ? 'checked' : ''} ${(!i.solution && !i.auto && i.status !== 'done') ? 'disabled title="Enter a solution first"' : 'title="Rectified in Pagarbook"'} />`
+        : `<span class="tag ${i.status === 'done' ? 'auto' : i.status === 'answered' ? 'ot' : 'abs'}">${i.status === 'done' ? 'Rectified' : i.status === 'answered' ? 'To rectify' : 'Open'}</span>`;
+      const by = i.solution ? `${esc(i.solutionBy||'')} · ${esc(stamp(i.solutionAt))}` : "";
+      const done = i.status === 'done' ? `<div class="by">✓ ${i.doneBy === 'auto' ? (i.auto ? 'automatic' : 'cleared by new upload') : esc(i.doneBy)} · ${esc(stamp(i.doneAt))}</div>` : "";
+      const lockSol = i.status === 'done' && !canTick;
+      return `<tr data-id="${esc(i.id)}">
+        <td class="name">${esc(i.name)}${i.staffId ? `<span class="sid">${esc(i.staffId)}</span>` : ''}</td>
+        <td>${esc(i.department)}</td>
+        <td class="date">${i.date ? esc(isoToDmy(i.date)) : '—'}</td>
+        <td><span class="tag ${esc(i.cat)}">${CAT_LABEL[i.cat]||''}</span>${esc(i.issue)}</td>
+        <td>${esc(i.action)}</td>
+        <td class="sol-cell"><input type="text" list="quickSolutions" data-sol="${esc(i.id)}" value="${esc(i.solution||'')}" placeholder="${i.auto ? 'Optional' : 'Type or pick a solution'}" ${lockSol ? 'disabled' : ''} />
+          <div class="by">${by}</div>${done}</td>
+        <td class="tick-cell">${tick}</td>
+      </tr>`;
+    }).join('');
+
+    $('listBody').querySelectorAll('input[data-sol]').forEach(inp => {
+      inp.addEventListener('keydown', e => { if (e.key === "Enter"){ e.preventDefault(); inp.blur(); } });
+      inp.addEventListener('change', () => saveSolution(inp));
+    });
+    $('listBody').querySelectorAll('input[data-tick]').forEach(cb => cb.addEventListener('change', () => setDone(cb.getAttribute('data-tick'), cb.checked, cb)));
+  }
+
+  function findIssue(id){ return S.period && S.period.issues.find(i => i.id === id); }
+  function replaceIssue(updated){
+    const idx = S.period.issues.findIndex(i => i.id === updated.id);
+    if (idx >= 0) S.period.issues[idx] = updated;
+    store.set("aa_cache_" + S.period.id, S.period);
+    const entry = S.periods.find(p => p.id === S.period.id);
+    if (entry && (!S.user || S.user.role !== "supervisor" || !S.user.depts.length)) entry.counts = counts(S.period.issues);
+    renderPeriodSelect();
+  }
+
+  async function saveSolution(inp){
+    const id = inp.getAttribute('data-sol');
+    const issue = findIssue(id);
+    const val = inp.value.trim();
+    if (!issue || val === (issue.solution || "")) return;
+    const cell = inp.closest('.sol-cell');
+    cell.classList.add('saving');
+    try {
+      const out = await api("updateIssue", { periodId: S.period.id, issueId: id, solution: val });
+      replaceIssue(out.issue);
+      cell.classList.remove('saving'); cell.classList.add('saved');
+      // leave the row in place while the user works down the list; refresh counts and the tick box
+      const tr = inp.closest('tr');
+      const cb = tr.querySelector('input[data-tick]');
+      if (cb) { cb.disabled = !out.issue.solution && !out.issue.auto && out.issue.status !== 'done'; cb.title = cb.disabled ? "Enter a solution first" : "Rectified in Pagarbook"; }
+      tr.querySelector('.by').textContent = out.issue.solution ? `${out.issue.solutionBy} · ${stamp(out.issue.solutionAt)}` : "";
+      updateCounts();
+      toast(val ? "Solution saved" : "Solution cleared");
+    } catch (err){
+      cell.classList.remove('saving');
+      inp.value = issue.solution || "";
+      toast(err.message);
+    }
+  }
+
+  async function setDone(id, done, cb){
+    const tr = cb.closest('tr');
+    cb.disabled = true;
+    try {
+      const out = await api("updateIssue", { periodId: S.period.id, issueId: id, done });
+      replaceIssue(out.issue);
+      const stillVisible = S.f.status === "all" && !S.f.liveOnly;
+      if (!stillVisible){
+        tr.classList.add('leaving');
+        setTimeout(() => { renderList(); }, 350);
+      } else renderList();
+      toast(done ? `${out.issue.name}: rectified` : `${out.issue.name}: back to “to rectify”`, "Undo", () => undoDone(id, !done));
+    } catch (err){
+      cb.checked = !done; cb.disabled = false;
+      toast(err.message);
+    }
+  }
+  async function undoDone(id, done){
+    try { const out = await api("updateIssue", { periodId: S.period.id, issueId: id, done }); replaceIssue(out.issue); renderList(); }
+    catch (err){ toast(err.message); }
+  }
+
+  function updateCounts(){
+    document.querySelectorAll('#statusSeg button').forEach(b => { b.querySelector('.c').textContent = `(${filtered(b.getAttribute('data-s')).length})`; });
+  }
+
+  document.querySelectorAll('#statusSeg button').forEach(b => b.addEventListener('click', () => { S.f.status = b.getAttribute('data-s'); S.f.liveOnly = false; renderList(); }));
+  $('fDept').addEventListener('change', e => { S.f.dept = e.target.value; renderList(); });
+  $('fCat').addEventListener('change', e => { S.f.cat = e.target.value; renderList(); });
+  let qTimer = null;
+  $('fQ').addEventListener('input', e => { clearTimeout(qTimer); qTimer = setTimeout(() => { S.f.q = e.target.value; renderList(); }, 200); });
+
+  $('printBtn').addEventListener('click', () => { try { window.print(); } catch(e){ toast("Use your browser's Print (Ctrl+P)"); } });
+  $('copyBtn').addEventListener('click', () => {
+    const rows = filtered();
+    const lines = [["Staff Name","Department","Date","Issue","Action","Status"].join('\t')]
+      .concat(rows.map(i => [i.name, i.department, isoToDmy(i.date), i.issue, i.action, i.solution || ''].join('\t')));
+    navigator.clipboard.writeText(lines.join('\n'))
+      .then(() => toast(`Copied ${rows.length} rows — paste into your report Excel`))
+      .catch(() => toast("Couldn't copy automatically — select the table and copy manually"));
+  });
+  $('xlsxBtn').addEventListener('click', () => {
+    if (typeof XLSX === "undefined") return toast("Spreadsheet library not loaded (needs internet)");
+    const rows = filtered();
+    const data = [["","Staff Name","Staff ID","Department","Date","Issue","Action","Solution","Rectified"]].concat(rows.map(i =>
+      ["", i.name, i.staffId, i.department, isoToDmy(i.date), i.issue, i.action, i.solution || '', i.status === 'done' ? 'Yes' : '']));
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{wch:3},{wch:22},{wch:9},{wch:14},{wch:11},{wch:46},{wch:34},{wch:30},{wch:10}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (S.f.dept === 'All' ? 'All Discrepancies' : S.f.dept).slice(0,31));
+    XLSX.writeFile(wb, `Attendance_Discrepancies_${S.period.id}_${S.f.dept.replace(/\s+/g,'_')}.xlsx`);
+  });
+
+  // ---------------- new analysis ----------------
+  const A = { sources: [], decisions: {}, combined: null, issues: [], year: null, filter: "attention",
+              config: Object.assign({}, C.DEFAULT_CONFIG) };
+
+  $('dropzone').addEventListener('click', () => $('fileInput').click());
+  $('dropzone').addEventListener('dragover', e => { e.preventDefault(); $('dropzone').classList.add('drag'); });
+  $('dropzone').addEventListener('dragleave', () => $('dropzone').classList.remove('drag'));
+  $('dropzone').addEventListener('drop', e => { e.preventDefault(); $('dropzone').classList.remove('drag'); if (e.dataTransfer.files.length) addFiles(Array.from(e.dataTransfer.files)); });
+  $('fileInput').addEventListener('change', e => { if (e.target.files.length) addFiles(Array.from(e.target.files)); e.target.value = ""; });
+  $('modeFileBtn').addEventListener('click', () => setMode('file'));
+  $('modePasteBtn').addEventListener('click', () => setMode('paste'));
+  function setMode(m){
+    $('fileMode').hidden = m !== 'file'; $('pasteMode').hidden = m !== 'paste';
+    $('modeFileBtn').classList.toggle('active', m === 'file'); $('modePasteBtn').classList.toggle('active', m === 'paste');
+  }
+
+  function uniqueLabel(base){ let l = base, n = 2; while (A.sources.some(s => s.label === l)) l = `${base} (${n++})`; return l; }
+
+  async function addFiles(files){
+    if (typeof XLSX === "undefined"){ $('fileStatus').textContent = "The spreadsheet reader didn't load. This page needs internet access."; return; }
+    const problems = [];
+    for (const file of files){
+      try {
+        const data = new Uint8Array(await file.arrayBuffer());
+        const wb = XLSX.read(data, { type:'array' });
+        const sheets = wb.SheetNames.map(n => ({ name:n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header:1, raw:false, defval:null }) }));
+        const label = uniqueLabel(file.name.replace(/\.(xlsx|xls)$/i, ""));
+        const staff = C.parseWorkbook(sheets, label);
+        if (!staff.length){ problems.push(`${file.name}: couldn't find the Pagarbook layout`); continue; }
+        if (A.year === null) A.year = C.guessYear(file.name);
+        A.sources.push({ label, staff });
+      } catch (err){ problems.push(`${file.name}: ${err.message}`); }
+    }
+    refreshAnalysis();
+    if (problems.length) $('fileStatus').textContent = problems.join(" · ");
+  }
+
+  $('parsePasteBtn').addEventListener('click', () => {
+    const text = $('pasteArea').value;
+    if (!text.trim()) return;
+    const dept = $('pasteDept').value.trim();
+    const label = uniqueLabel(dept ? `Pasted - ${dept}` : "Pasted data");
+    const staff = C.parseSheet(text.split(/\r?\n/).map(l => l.split('\t')), label, label, { defaultDept: dept });
+    if (!staff.length){ $('fileStatus').textContent = "Couldn't read the pasted data. Include the header row and the Attendance State / IN / OUT / WH rows."; return; }
+    if (A.year === null) A.year = new Date().getFullYear();
+    A.sources.push({ label, staff });
+    $('pasteArea').value = "";
+    refreshAnalysis();
+  });
+
+  function periodRange(){
+    const d = A.combined.dayHeaders;
+    if (!d.length) return null;
+    const first = d[0], last = d[d.length-1];
+    const endYear = last.month < first.month ? A.year + 1 : A.year;
+    const pad = n => String(n).padStart(2,'0');
+    return { start: `${A.year}-${pad(first.month)}-${pad(first.day)}`, end: `${endYear}-${pad(last.month)}-${pad(last.day)}` };
+  }
+
+  function refreshAnalysis(){
+    $('fileList').innerHTML = A.sources.map((s, i) => `<span class="file-chip"><span>${esc(s.label)}</span><span class="meta">${s.staff.length} staff</span><button title="Remove" data-i="${i}">&times;</button></span>`).join('');
+    $('fileList').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      A.sources.splice(+b.getAttribute('data-i'), 1);
+      if (!A.sources.length){ A.year = null; A.decisions = {}; }
+      refreshAnalysis();
+    }));
+    if (!A.sources.length){ $('combineCard').hidden = true; $('saveCard').hidden = true; $('fileStatus').textContent = ""; A.combined = null; return; }
+
+    $('cfgYear').value = A.year;
+    A.combined = C.combine(A.sources, A.decisions);
+    A.issues = C.analyzePeople(A.combined, A.year, A.config);
+    const r = periodRange();
+    const totalRows = A.sources.reduce((n, s) => n + s.staff.length, 0);
+    $('fileStatus').textContent = `${A.sources.length} file(s), ${totalRows} staff rows → ${A.combined.people.length} staff · ${isoToDmy(r.start)} to ${isoToDmy(r.end)} · ${A.issues.length} discrepancies`;
+
+    $('combineCard').hidden = !(A.sources.length > 1 || A.combined.checks.length);
+    if (!$('combineCard').hidden) renderCombine();
+
+    $('saveCard').hidden = false;
+    const exists = S.periods.find(p => p.id === `${r.start}_${r.end}`);
+    $('saveNote').hidden = !exists;
+    if (exists) $('saveNote').innerHTML = `This period is already saved (${esc(isoToDmy(r.start))} to ${esc(isoToDmy(r.end))}). Saving again keeps every solution and tick. Items that no longer show up in this upload are ticked automatically, because they were fixed in Pagarbook.`;
+
+    const cnt = {}; A.issues.forEach(i => cnt[i.cat] = (cnt[i.cat]||0) + 1);
+    $('previewStamps').innerHTML = `<div class="stamp"><div class="n c-navy">${A.issues.length}</div><div class="lbl">Discrepancies</div></div>` +
+      CAT_ORDER.filter(k => cnt[k]).map(k => `<div class="stamp"><div class="n c-${k}">${cnt[k]}</div><div class="lbl">${CAT_LABEL[k]}</div></div>`).join('');
+  }
+
+  const KIND_TAG = { conflict:"ID clash", samename:"Check", similar:"Merged", same:"Merged" };
+  const KIND_ACTION = {
+    conflict: "Different people on one Staff ID. Change the Staff ID of one of them in Pagarbook. Kept as separate rows until then.",
+    samename: "Same name under different Staff IDs. Confirm they are two different people; if not, use one Staff ID.",
+    similar: "Combined as one person. Optionally correct the name spelling in Pagarbook.",
+    same: "Combined as one person.",
+  };
+  function renderCombine(){
+    const ch = A.combined.checks, n = k => ch.filter(c => c.kind === k).length;
+    $('combineStamps').innerHTML = `
+      <div class="stamp"><div class="n c-navy">${A.combined.people.length}</div><div class="lbl">Staff after combining</div></div>
+      <div class="stamp"><div class="n c-done">${n('same') + n('similar')}</div><div class="lbl">Matched by ID + name</div></div>
+      <div class="stamp"><div class="n c-ans">${n('similar')}</div><div class="lbl">Name spelt differently</div></div>
+      <div class="stamp"><div class="n ${n('conflict') ? 'c-open' : 'c-done'}">${n('conflict')}</div><div class="lbl">Staff ID clashes</div></div>
+      <div class="stamp"><div class="n c-punch">${n('samename')}</div><div class="lbl">Same name, other ID</div></div>`;
+    const rows = A.filter === "all" ? ch : ch.filter(c => c.kind !== "same");
+    $('combineEmpty').hidden = rows.length > 0;
+    $('combineBody').innerHTML = rows.map(c => {
+      const who = c.records.map(r => `<span class="who">${esc(r.name)}${c.kind === 'samename' ? ` <span class="mono">(${esc(r.id)})</span>` : ''} <span class="src">· ${esc(r.dept)} · ${esc(r.file)}</span></span>`).join('');
+      const sel = c.kind === "samename" ? '<span class="hint">—</span>' :
+        `<select data-key="${esc(c.key)}"><option value="merge" ${c.decision==='merge'?'selected':''}>Same person (combine)</option><option value="separate" ${c.decision==='separate'?'selected':''}>Different people (keep apart)</option></select>`;
+      return `<tr><td class="id">${esc(c.id)}</td><td>${who}</td><td><span class="tag ${c.kind}">${KIND_TAG[c.kind]}</span><br><span class="hint">${esc(C.KIND_TEXT[c.kind])}</span></td><td style="max-width:300px">${esc(KIND_ACTION[c.kind])}</td><td>${sel}</td></tr>`;
+    }).join('');
+    $('combineBody').querySelectorAll('select').forEach(s => s.addEventListener('change', () => { A.decisions[s.getAttribute('data-key')] = s.value; refreshAnalysis(); }));
+  }
+  $('combineFilter').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    A.filter = b.getAttribute('data-f');
+    $('combineFilter').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    renderCombine();
+  }));
+
+  $('recalcBtn').addEventListener('click', () => {
+    A.config.standardShiftMin = Math.round(parseFloat($('cfgShift').value || "12") * 60);
+    A.config.toleranceMin = parseInt($('cfgTolerance').value || "30", 10);
+    A.config.graceDays = parseInt($('cfgGrace').value || "3", 10);
+    const y = parseInt($('cfgYear').value, 10);
+    if (y >= 2000 && y <= 2100) A.year = y;
+    if (A.sources.length){ refreshAnalysis(); toast("Re-analyzed with these rules"); }
+  });
+
+  $('downloadCombinedBtn').addEventListener('click', () => {
+    if (!A.combined) return;
+    const wb = XLSX.utils.book_new();
+    for (const s of C.combinedSheets(A.combined)){
+      const ws = XLSX.utils.aoa_to_sheet(s.aoa);
+      ws['!cols'] = s.notes ? [{wch:10},{wch:24},{wch:14},{wch:30},{wch:9},{wch:9},{wch:12},{wch:10},{wch:11},{wch:60}]
+        : [{wch:5},{wch:22},{wch:9},{wch:13},{wch:15},{wch:15}].concat(new Array(s.dayCount).fill({wch:7})).concat(new Array(8).fill({wch:9}));
+      XLSX.utils.book_append_sheet(wb, ws, s.name);
+    }
+    const r = periodRange();
+    XLSX.writeFile(wb, `Attendance_Combined_${isoToDmy(r.start)}_to_${isoToDmy(r.end)}.xlsx`);
+  });
+
+  $('saveBtn').addEventListener('click', async () => {
+    if (!A.combined) return;
+    const r = periodRange();
+    const btn = $('saveBtn');
+    btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      const out = await api("savePeriod", { period: {
+        start: r.start, end: r.end, label: `${isoToDmy(r.start)} to ${isoToDmy(r.end)}`,
+        sources: A.sources.map(s => s.label),
+        staffCount: A.combined.people.length,
+        checks: A.combined.checks.filter(c => c.kind !== "same").map(c => ({ id: c.id, kind: c.kind, decision: c.decision, clusters: c.clusters || [], names: c.records.map(x => x.name) })),
+        issues: A.issues.map(i => ({ name: i.name, staffId: i.staffId, department: i.department, date: dateToIso(i.date), cat: i.cat, issue: i.issue, action: i.action, status: i.status })),
+      }});
+      S.periodId = out.id;
+      store.set("aa_period", out.id);
+      toast(`Saved: ${out.added} new, ${out.kept} kept with their solutions` + (out.cleared ? `, ${out.cleared} cleared automatically` : ""));
+      A.sources = []; A.decisions = {}; A.year = null; refreshAnalysis();
+      await sync(true);
+      openList({ status:"open", dept:"All", cat:"All" });
+    } catch (err){ toast(err.message); }
+    finally { btn.disabled = false; btn.textContent = "Save to Google Drive"; }
+  });
+
+  // ---------------- users (admin) ----------------
+  let editing = null;
+  async function loadUsers(){
+    try { const out = await api("listUsers", {}); S.users = out.users; renderUsers(); }
+    catch (err){ toast(err.message); }
+  }
+  function renderUsers(){
+    const depts = new Set();
+    S.periods.forEach(p => Object.keys(p.byDept || {}).forEach(d => depts.add(d)));
+    $('deptList').innerHTML = Array.from(depts).sort().map(d => `<option value="${esc(d)}"></option>`).join('');
+    $('usersBody').innerHTML = S.users.length ? S.users.map(u => `<tr>
+      <td class="id">${esc(u.username)}</td><td>${esc(u.name)}</td><td><span class="tag role-${esc(u.role)}">${esc(ROLE_LABEL[u.role]||u.role)}</span></td>
+      <td>${u.depts.length ? esc(u.depts.join(', ')) : '<span class="hint">All</span>'}</td>
+      <td>${u.active ? 'Active' : '<span class="c-open">Disabled</span>'}</td>
+      <td class="btn-row"><button class="btn secondary small" data-edit="${esc(u.username)}">Edit</button><button class="btn danger small" data-del="${esc(u.username)}">Delete</button></td></tr>`).join('')
+      : `<tr><td colspan="6" class="hint">No users yet. Add the first one above.</td></tr>`;
+    $('usersBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editUser(S.users.find(u => u.username === b.getAttribute('data-edit')))));
+    $('usersBody').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      const name = b.getAttribute('data-del');
+      if (!confirm(`Delete user ${name}?`)) return;
+      try { const out = await api("deleteUser", { username: name }); S.users = out.users; renderUsers(); toast("User deleted"); }
+      catch (err){ toast(err.message); }
+    }));
+  }
+  function editUser(u){
+    editing = u ? u.username : null;
+    $('userFormTitle').textContent = u ? `Edit user ${u.username}` : "Add user";
+    $('uUsername').value = u ? u.username : ""; $('uUsername').disabled = !!u;
+    $('uName').value = u ? u.name : "";
+    $('uRole').value = u ? u.role : "supervisor";
+    $('uDepts').value = u ? u.depts.join(', ') : "";
+    $('uPass').value = "";
+    $('uPassLabel').textContent = u ? "New password (blank = keep)" : "Password";
+    $('uActive').checked = u ? u.active : true;
+    $('uCancel').hidden = !u;
+    if (u) $('view-users').scrollIntoView({ behavior:'smooth' });
+  }
+  $('uCancel').addEventListener('click', () => editUser(null));
+  $('uSave').addEventListener('click', async () => {
+    try {
+      const out = await api("saveUser", { user: {
+        username: $('uUsername').value, name: $('uName').value, role: $('uRole').value,
+        depts: $('uDepts').value.split(',').map(s => s.trim()).filter(Boolean),
+        password: $('uPass').value, active: $('uActive').checked,
+      }});
+      S.users = out.users; renderUsers(); toast(editing ? "User updated" : "User added"); editUser(null);
+    } catch (err){ toast(err.message); }
+  });
+
+  // ---------------- change password ----------------
+  $('pwBtn').addEventListener('click', () => { $('pwErr').textContent = ""; $('pwForm').reset(); $('pwModal').hidden = false; $('pwOld').focus(); });
+  $('pwCancel').addEventListener('click', () => $('pwModal').hidden = true);
+  $('pwForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if ($('pwNew').value !== $('pwNew2').value){ $('pwErr').textContent = "The new passwords don't match"; return; }
+    try { await api("changePassword", { oldPassword: $('pwOld').value, newPassword: $('pwNew').value }); $('pwModal').hidden = true; toast("Password changed"); }
+    catch (err){ $('pwErr').textContent = err.message; }
+  });
+
+  initLogin();
+})();
+</script>
+</body>
+</html>
