@@ -172,6 +172,15 @@
   /* ---- Users form ---- */
   .form-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:14px;}
   .form-grid input, .form-grid select{width:100%;}
+  .form-grid input[type=checkbox], .check-line input{width:auto; margin:0;}
+  .check-line{display:flex; gap:8px; align-items:center; font-size:13px;}
+  .admin-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;}
+  .danger-zone{border-color:#E3B5BB;}
+  .danger-zone .card-head{background:#FCF1F2;}
+  .danger-zone .card-head h2{color:var(--crimson);}
+  .log-table td{font-size:12.5px;}
+  .log-table td.when{white-space:nowrap; font-family:ui-monospace,monospace; color:var(--muted);}
+  .act-login{color:var(--teal);} .act-err{color:var(--crimson);}
 
   /* ---- Modal / toast ---- */
   .modal-bg{position:fixed; inset:0; background:rgba(11,31,58,.55); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20;}
@@ -241,7 +250,7 @@
       <button data-view="dash" class="active">Dashboard</button>
       <button data-view="list">Discrepancies</button>
       <button data-view="analyse" data-roles="admin,office">New analysis</button>
-      <button data-view="users" data-roles="admin">Users</button>
+      <button data-view="users" data-roles="admin">Admin settings</button>
     </nav>
   </div>
 
@@ -394,6 +403,13 @@
 
     <!-- ---------- Users ---------- -->
     <section id="view-users" hidden>
+      <div class="seg admin-tabs" id="adminTabs">
+        <button data-a="users" class="active">Users</button>
+        <button data-a="log">Activity log</button>
+        <button data-a="backup">Backup &amp; restore</button>
+        <button data-a="wipe">Data wipe</button>
+      </div>
+      <div id="admin-users">
       <div class="card">
         <div class="card-head"><h2 id="userFormTitle">Add user</h2></div>
         <div class="card-body">
@@ -408,7 +424,7 @@
               </select></label>
             <label><span class="field-label">Departments (supervisor)</span><input type="text" id="uDepts" list="deptList" placeholder="Blank = all. Comma separated" /></label>
             <label><span class="field-label" id="uPassLabel">Password</span><input type="password" id="uPass" autocomplete="new-password" /></label>
-            <label style="display:flex; gap:8px; align-items:center; margin-top:18px;"><input type="checkbox" id="uActive" checked /> Active (can log in)</label>
+            <label class="check-line" style="margin-top:22px;"><input type="checkbox" id="uActive" checked /> Active (can log in)</label>
           </div>
           <div class="btn-row" style="margin-top:16px;">
             <button class="btn" id="uSave">Save user</button>
@@ -423,6 +439,64 @@
           <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Departments</th><th>Status</th><th></th></tr></thead>
           <tbody id="usersBody"></tbody>
         </table></div>
+      </div>
+      </div>
+
+      <div id="admin-log" hidden>
+        <div class="card">
+          <div class="card-head"><h2>Activity log</h2>
+            <div class="btn-row"><button class="btn secondary small" id="logRefresh">Refresh</button><button class="btn secondary small" id="logXlsx">Download .xlsx</button></div>
+          </div>
+          <div class="filters">
+            <label><span class="field-label">User</span><select id="logUser"></select></label>
+            <label><span class="field-label">Action</span><select id="logAction"></select></label>
+            <label class="grow"><span class="field-label">Search</span><input type="text" id="logQ" placeholder="name, staff ID, period…" /></label>
+          </div>
+          <div class="table-wrap"><table class="log-table">
+            <thead><tr><th>When</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+            <tbody id="logBody"></tbody>
+          </table></div>
+          <p class="hint" style="padding:10px 18px;">The latest 5000 entries are kept. Viewing pages and syncing are not logged.</p>
+        </div>
+      </div>
+
+      <div id="admin-backup" hidden>
+        <div class="card">
+          <div class="card-head"><h2>Backup</h2></div>
+          <div class="card-body">
+            <p class="hint">Saves all periods, solutions, ticks and users to a <b>backup_….json</b> file in the Google Drive data folder, and downloads a copy to this computer.</p>
+            <div class="btn-row" style="margin-top:12px;"><button class="btn" id="backupBtn">Back up now</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Restore</h2></div>
+          <div class="card-body">
+            <p class="hint">Replaces all periods, solutions and ticks with the ones in a backup file. A backup of the current data is saved to Drive first.</p>
+            <div class="btn-row" style="margin-top:12px;">
+              <input type="file" id="restoreFile" accept=".json,application/json" />
+              <label class="check-line"><input type="checkbox" id="restoreUsers" /> Also restore users and passwords</label>
+              <button class="btn secondary" id="restoreBtn">Restore</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="admin-wipe" hidden>
+        <div class="card danger-zone">
+          <div class="card-head"><h2>Data wipe</h2></div>
+          <div class="card-body">
+            <p class="hint">A backup is saved to Google Drive automatically before wiping, so it can be restored later. Users and logins are never wiped.</p>
+            <div style="margin:14px 0; display:flex; flex-direction:column; gap:8px;">
+              <label class="check-line"><input type="radio" name="wipeScope" value="periods" checked /> Delete all discrepancy periods (solutions and ticks included)</label>
+              <label class="check-line"><input type="radio" name="wipeScope" value="all" /> Delete everything except users (periods, learned solutions and the activity log)</label>
+            </div>
+            <div class="btn-row" style="align-items:flex-end;">
+              <label><span class="field-label">Admin password (Script Properties)</span><input type="password" id="wipePw" autocomplete="off" /></label>
+              <label><span class="field-label">Type WIPE to confirm</span><input type="text" id="wipeConfirm" autocomplete="off" style="width:120px;" /></label>
+              <button class="btn danger" id="wipeBtn">Wipe data</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -1265,7 +1339,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     ["dash","list","analyse","users"].forEach(x => $('view-' + x).hidden = x !== v);
     document.querySelector('main').classList.toggle('wide', v === "list");
     document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.getAttribute('data-view') === v));
-    if (v === "users") loadUsers();
+    if (v === "users"){ loadUsers(); if (ADMIN_TAB === "log") loadLog(); }
     render();
   }
 
@@ -1759,6 +1833,82 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
         password: $('uPass').value, active: $('uActive').checked,
       }});
       S.users = out.users; renderUsers(); toast(editing ? "User updated" : "User added"); editUser(null);
+    } catch (err){ toast(err.message); }
+  });
+
+  // ---------------- admin settings: tabs, log, backup, wipe ----------------
+  let ADMIN_TAB = "users", LOG = [];
+  document.querySelectorAll('#adminTabs button').forEach(b => b.addEventListener('click', () => showAdminTab(b.getAttribute('data-a'))));
+  function showAdminTab(t){
+    ADMIN_TAB = t;
+    document.querySelectorAll('#adminTabs button').forEach(b => b.classList.toggle('active', b.getAttribute('data-a') === t));
+    ["users","log","backup","wipe"].forEach(x => $('admin-' + x).hidden = x !== t);
+    if (t === "log") loadLog();
+  }
+  const ACTION_LABEL = { login:"Login", savePeriod:"Saved analysis", updateIssue:"Discrepancy", saveUser:"User saved", deleteUser:"User deleted",
+    deletePeriod:"Period deleted", backup:"Backup", restore:"Restore", wipe:"Data wipe", changePassword:"Password changed" };
+  async function loadLog(){
+    try { const out = await api("listLog", { limit: 5000 }); LOG = out.log || []; renderLog(); }
+    catch (err){ toast(err.message); }
+  }
+  function logRows(){
+    const u = $('logUser').value || "All", a = $('logAction').value || "All", q = $('logQ').value.toLowerCase();
+    return LOG.filter(e => (u === "All" || e.user === u) && (a === "All" || e.action === a) && (!q || `${e.user} ${e.detail}`.toLowerCase().includes(q)));
+  }
+  function renderLog(){
+    const keepU = $('logUser').value, keepA = $('logAction').value;
+    const users = Array.from(new Set(LOG.map(e => e.user))).sort(), acts = Array.from(new Set(LOG.map(e => e.action))).sort();
+    $('logUser').innerHTML = `<option value="All">All users</option>` + users.map(u => `<option ${u === keepU ? 'selected' : ''}>${esc(u)}</option>`).join('');
+    $('logAction').innerHTML = `<option value="All">All actions</option>` + acts.map(a => `<option value="${esc(a)}" ${a === keepA ? 'selected' : ''}>${esc(ACTION_LABEL[a] || a)}</option>`).join('');
+    const rows = logRows().slice(0, 1000);
+    $('logBody').innerHTML = rows.length ? rows.map(e => {
+      const err = /ERROR|failed/.test(e.detail);
+      return `<tr><td class="when">${esc(stamp(e.t))}</td><td><b>${esc(e.user)}</b></td><td class="${err ? 'act-err' : e.action === 'login' ? 'act-login' : ''}">${esc(ACTION_LABEL[e.action] || e.action)}</td><td>${esc(e.detail)}</td></tr>`;
+    }).join('') : `<tr><td colspan="4" class="hint">No entries.</td></tr>`;
+  }
+  ['logUser','logAction'].forEach(id => $(id).addEventListener('change', renderLog));
+  $('logQ').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(renderLog, 200); });
+  $('logRefresh').addEventListener('click', loadLog);
+  $('logXlsx').addEventListener('click', () => {
+    if (typeof XLSX === "undefined") return toast("Spreadsheet library not loaded (needs internet)");
+    const ws = XLSX.utils.aoa_to_sheet([["When","User","Action","Details"]].concat(logRows().map(e => [stamp(e.t), e.user, ACTION_LABEL[e.action] || e.action, e.detail])));
+    ws['!cols'] = [{wch:17},{wch:14},{wch:16},{wch:90}];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Activity log");
+    XLSX.writeFile(wb, `Attendance_Activity_Log.xlsx`);
+  });
+
+  function downloadJson(obj, name){
+    const blob = new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  $('backupBtn').addEventListener('click', async () => {
+    const b = $('backupBtn'); b.disabled = true; b.textContent = "Backing up…";
+    try { const out = await api("backup", {}); downloadJson(out.backup, out.savedAs); toast(`Backup saved to Drive as ${out.savedAs} and downloaded`); }
+    catch (err){ toast(err.message); }
+    finally { b.disabled = false; b.textContent = "Back up now"; }
+  });
+  $('restoreBtn').addEventListener('click', async () => {
+    const f = $('restoreFile').files[0];
+    if (!f) return toast("Choose a backup .json file first");
+    let backup;
+    try { backup = JSON.parse(await f.text()); } catch (e){ return toast("That file is not valid JSON"); }
+    const n = (backup.periodFiles || []).length;
+    if (!confirm(`Restore ${n} period(s) from ${f.name}? The current periods, solutions and ticks will be replaced (a backup of them is saved to Drive first).`)) return;
+    try { const out = await api("restore", { backup, includeUsers: $('restoreUsers').checked }); toast(`Restored ${out.restored} period(s)`); $('restoreFile').value = ""; sync(); }
+    catch (err){ toast(err.message); }
+  });
+  $('wipeBtn').addEventListener('click', async () => {
+    if ($('wipeConfirm').value.trim() !== "WIPE") return toast("Type WIPE in the confirm box");
+    const scope = document.querySelector('input[name=wipeScope]:checked').value;
+    if (!confirm(scope === "all" ? "Delete ALL periods, learned solutions and the activity log?" : "Delete ALL discrepancy periods?")) return;
+    try {
+      const out = await api("wipe", { scope, adminPassword: $('wipePw').value });
+      $('wipePw').value = ""; $('wipeConfirm').value = "";
+      Object.keys(localStorage).filter(k => k.startsWith("aa_cache_")).forEach(k => store.del(k));
+      S.period = null; S.periodId = "";
+      toast(`Data wiped. Backup saved to Drive as ${out.savedAs}`);
+      sync();
     } catch (err){ toast(err.message); }
   });
 
