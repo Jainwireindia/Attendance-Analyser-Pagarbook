@@ -53,6 +53,17 @@
   .nav button:hover{color:#fff;}
 
   main{max-width:1240px; margin:0 auto; padding:22px 24px 64px;}
+  main.wide{max-width:none;}
+  td.punch{font-family:ui-monospace,monospace; white-space:nowrap; font-size:12.5px;}
+  td.punch .miss{color:var(--crimson); font-weight:700;}
+  td.punch .hi{color:#8A6206; font-weight:700;}
+  td.punch .lo{color:#8A3E1C; font-weight:700;}
+  td.punch .st{display:block; font-size:10.5px; color:var(--muted); margin-top:2px;}
+  .issue-cell .act{display:block; font-size:12px; color:var(--muted); margin-top:3px;}
+  td.name .dept{display:block; font-weight:400; font-size:11.5px; color:var(--muted);}
+  table.list{table-layout:auto;}
+  table.list td.sol-cell{width:32%; min-width:240px;}
+  table.list td.issue-cell{min-width:220px;}
 
   /* ---- Cards ---- */
   .card{background:var(--card); border:1px solid var(--rule); border-radius:3px;}
@@ -307,8 +318,8 @@
         </div>
         <p class="hint no-print" id="listHint" style="padding:10px 18px 0;"></p>
         <div class="table-wrap" style="margin-top:8px;">
-          <table>
-            <thead><tr><th>Staff</th><th>Department</th><th>Date</th><th>Issue</th><th>Action</th><th>Solution</th><th id="tickHead" style="text-align:center">Rectified</th></tr></thead>
+          <table class="list">
+            <thead><tr><th>Staff</th><th>Date</th><th>IN</th><th>OUT</th><th>WH</th><th>Issue / action</th><th>Solution</th><th id="tickHead" style="text-align:center">Rectified</th></tr></thead>
             <tbody id="listBody"></tbody>
           </table>
         </div>
@@ -317,19 +328,7 @@
           <span>Supervisor: _______________________</span><span>Date: _______________</span><span>Signature: _______________</span>
         </div>
       </div>
-      <datalist id="quickSolutions">
-        <option value="OT approved"></option>
-        <option value="OT not approved - normal day"></option>
-        <option value="Half day"></option>
-        <option value="Full day worked - forgot to punch"></option>
-        <option value="Full day worked"></option>
-        <option value="Sunday work approved"></option>
-        <option value="Leave approved"></option>
-        <option value="Absent - unpaid"></option>
-        <option value="Resigned - last working day "></option>
-        <option value="Joined on "></option>
-        <option value="Punch error - corrected"></option>
-      </datalist>
+      <div id="solLists"></div>
     </section>
 
     <!-- ---------- New analysis ---------- -->
@@ -1089,13 +1088,24 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
   const CAT_LABEL = { ot:"OT", half:"Half Day", abs:"Absent", wo:"Worked Sunday", new:"New Joiner", resign:"Resignation?", punch:"Missing Punch", auto:"Not In Company" };
   const CAT_ORDER = ["ot","half","punch","abs","wo","new","resign","auto"];
   const ROLE_LABEL = { admin:"Admin", office:"Office", supervisor:"Supervisor" };
+  // Ready-made solutions per issue type. Solutions staff type are learned and shown first.
+  const PRESETS = {
+    ot:     ["OT approved", "OT not approved - normal day", "OT approved partly", "Punch error - corrected"],
+    half:   ["Half day", "Early leave approved - full day", "Full day worked - punch error", "Short hours - half day"],
+    punch:  ["Full day worked - OUT punch missed", "Full day worked - IN punch missed", "Half day", "Absent"],
+    abs:    ["Leave approved", "Absent - unpaid", "Present - punch missed", "Weekly off"],
+    wo:     ["Sunday work approved", "Sunday work not approved", "Marked by mistake"],
+    new:    ["Joined on ", "Present from first day - not marked"],
+    resign: ["Resigned - last working day ", "On long leave", "Absent - will rejoin"],
+    auto:   ["Not in company"],
+  };
 
   const S = {
     url: "", token: "", user: null,
     periods: [], periodId: "", period: null,
     view: "dash",
     f: { status:"open", dept:"All", cat:"All", q:"" },
-    syncing: false, lastSync: null, users: [],
+    syncing: false, lastSync: null, users: [], library: {},
   };
 
   // ---------------- storage (best effort) ----------------
@@ -1198,6 +1208,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     document.querySelectorAll('#nav button[data-roles]').forEach(b => { b.hidden = !b.getAttribute('data-roles').split(',').includes(S.user.role); });
     document.querySelectorAll('.admin-only').forEach(el => el.hidden = !can('admin'));
     S.periodId = (store.get("aa_period") || "");
+    S.library = store.get("aa_library") || {};
     const cached = S.periodId && store.get("aa_cache_" + S.periodId);
     if (cached){ S.period = cached; render(); }
     showView(S.view);
@@ -1216,6 +1227,8 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
       if (S.periodId){
         const p = await api("getPeriod", { id: S.periodId });
         S.period = p.period;
+        S.library = p.library || {};
+        store.set("aa_library", S.library);
         store.set("aa_cache_" + S.periodId, S.period);
         store.set("aa_period", S.periodId);
       } else S.period = null;
@@ -1250,6 +1263,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     if (v === "users" && !can('admin')) v = "dash";
     S.view = v;
     ["dash","list","analyse","users"].forEach(x => $('view-' + x).hidden = x !== v);
+    document.querySelector('main').classList.toggle('wide', v === "list");
     document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.getAttribute('data-view') === v));
     if (v === "users") loadUsers();
     render();
@@ -1360,7 +1374,14 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     ).sort((a,b) => (a.department > b.department ? 1 : a.department < b.department ? -1 : 0) || (a.name > b.name ? 1 : a.name < b.name ? -1 : 0) || String(a.date).localeCompare(String(b.date)));
   }
 
+  function punchText(v, worked){
+    if (v === undefined || v === null) return '<span class="hint">·</span>';   // not stored (older save)
+    if (v && v !== '-') return esc(v);
+    return worked ? '<span class="miss">missing</span>' : '–';
+  }
+
   function renderList(){
+    renderSolLists();
     const p = S.period;
     const depts = p ? Array.from(new Set(p.issues.map(i => i.department))).sort() : [];
     $('fDept').innerHTML = `<option value="All">All departments</option>` + depts.map(d => `<option ${d === S.f.dept ? 'selected':''}>${esc(d)}</option>`).join('');
@@ -1394,13 +1415,17 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
       const by = i.solution ? `${esc(i.solutionBy||'')} · ${esc(stamp(i.solutionAt))}` : "";
       const done = i.status === 'done' ? `<div class="by">✓ ${i.doneBy === 'auto' ? (i.auto ? 'automatic' : 'cleared by new upload') : esc(i.doneBy)} · ${esc(stamp(i.doneAt))}</div>` : "";
       const lockSol = i.status === 'done' && !canTick;
+      const worked = /P/.test(i.state || '');
+      const pin = punchText(i.punchIn, worked), pout = punchText(i.punchOut, worked);
+      const whCls = i.cat === 'ot' ? 'hi' : i.cat === 'half' ? 'lo' : '';
       return `<tr data-id="${esc(i.id)}">
-        <td class="name">${esc(i.name)}${i.staffId ? `<span class="sid">${esc(i.staffId)}</span>` : ''}</td>
-        <td>${esc(i.department)}</td>
+        <td class="name">${esc(i.name)}${i.staffId ? `<span class="sid">${esc(i.staffId)}</span>` : ''}${S.f.dept === 'All' ? `<span class="dept">${esc(i.department)}</span>` : ''}</td>
         <td class="date">${i.date ? esc(isoToDmy(i.date)) : '—'}</td>
-        <td><span class="tag ${esc(i.cat)}">${CAT_LABEL[i.cat]||''}</span>${esc(i.issue)}</td>
-        <td>${esc(i.action)}</td>
-        <td class="sol-cell"><input type="text" list="quickSolutions" data-sol="${esc(i.id)}" value="${esc(i.solution||'')}" placeholder="${i.auto ? 'Optional' : 'Type or pick a solution'}" ${lockSol ? 'disabled' : ''} />
+        <td class="punch">${pin}</td>
+        <td class="punch">${pout}</td>
+        <td class="punch">${i.wh && i.wh !== '-' ? `<span class="${whCls}">${esc(i.wh)}</span>` : '–'}${i.state ? `<span class="st">${esc(i.state)}</span>` : ''}</td>
+        <td class="issue-cell"><span class="tag ${esc(i.cat)}">${CAT_LABEL[i.cat]||''}</span>${esc(i.issue)}<span class="act">→ ${esc(i.action)}</span></td>
+        <td class="sol-cell"><input type="text" list="sol-${esc(i.cat)}" data-sol="${esc(i.id)}" value="${esc(i.solution||'')}" placeholder="${i.auto ? 'Optional' : 'Type or pick a solution'}" ${lockSol ? 'disabled' : ''} />
           <div class="by">${by}</div>${done}</td>
         <td class="tick-cell">${tick}</td>
       </tr>`;
@@ -1411,6 +1436,18 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
       inp.addEventListener('change', () => saveSolution(inp));
     });
     $('listBody').querySelectorAll('input[data-tick]').forEach(cb => cb.addEventListener('change', () => setDone(cb.getAttribute('data-tick'), cb.checked, cb)));
+  }
+
+  function suggestions(cat){
+    const score = {};
+    const add = (t, n) => { t = String(t || "").trim(); if (!t || /\(auto\)$/.test(t)) return; score[t] = (score[t] || 0) + n; };
+    Object.entries(S.library[cat] || {}).forEach(([t, n]) => add(t, 1000 + n));         // typed before (all periods)
+    (S.period ? S.period.issues : []).forEach(i => { if (i.cat === cat) add(i.solution, 1000); });  // typed this period
+    (PRESETS[cat] || []).forEach((t, k) => add(t, 100 - k));                           // ready-made
+    return Object.keys(score).sort((a, b) => score[b] - score[a]).slice(0, 12);
+  }
+  function renderSolLists(){
+    $('solLists').innerHTML = CAT_ORDER.map(c => `<datalist id="sol-${c}">${suggestions(c).map(t => `<option value="${esc(t)}"></option>`).join('')}</datalist>`).join('');
   }
 
   function findIssue(id){ return S.period && S.period.issues.find(i => i.id === id); }
@@ -1440,6 +1477,8 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
       if (cb) { cb.disabled = !out.issue.solution && !out.issue.auto && out.issue.status !== 'done'; cb.title = cb.disabled ? "Enter a solution first" : "Rectified in Pagarbook"; }
       tr.querySelector('.by').textContent = out.issue.solution ? `${out.issue.solutionBy} · ${stamp(out.issue.solutionAt)}` : "";
       updateCounts();
+      if (val){ const lib = S.library[issue.cat] || (S.library[issue.cat] = {}); lib[val] = (lib[val] || 0) + 1; }
+      renderSolLists();
       toast(val ? "Solution saved" : "Solution cleared");
     } catch (err){
       cell.classList.remove('saving');
@@ -1483,8 +1522,8 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
   $('printBtn').addEventListener('click', () => { try { window.print(); } catch(e){ toast("Use your browser's Print (Ctrl+P)"); } });
   $('copyBtn').addEventListener('click', () => {
     const rows = filtered();
-    const lines = [["Staff Name","Department","Date","Issue","Action","Status"].join('\t')]
-      .concat(rows.map(i => [i.name, i.department, isoToDmy(i.date), i.issue, i.action, i.solution || ''].join('\t')));
+    const lines = [["Staff Name","Department","Date","IN","OUT","WH","Issue","Action","Status"].join('\t')]
+      .concat(rows.map(i => [i.name, i.department, isoToDmy(i.date), i.punchIn||'', i.punchOut||'', i.wh||'', i.issue, i.action, i.solution || ''].join('\t')));
     navigator.clipboard.writeText(lines.join('\n'))
       .then(() => toast(`Copied ${rows.length} rows — paste into your report Excel`))
       .catch(() => toast("Couldn't copy automatically — select the table and copy manually"));
@@ -1492,10 +1531,10 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
   $('xlsxBtn').addEventListener('click', () => {
     if (typeof XLSX === "undefined") return toast("Spreadsheet library not loaded (needs internet)");
     const rows = filtered();
-    const data = [["","Staff Name","Staff ID","Department","Date","Issue","Action","Solution","Rectified"]].concat(rows.map(i =>
-      ["", i.name, i.staffId, i.department, isoToDmy(i.date), i.issue, i.action, i.solution || '', i.status === 'done' ? 'Yes' : '']));
+    const data = [["","Staff Name","Staff ID","Department","Date","IN","OUT","WH","Issue","Action","Solution","Rectified"]].concat(rows.map(i =>
+      ["", i.name, i.staffId, i.department, isoToDmy(i.date), i.punchIn||'', i.punchOut||'', i.wh||'', i.issue, i.action, i.solution || '', i.status === 'done' ? 'Yes' : '']));
     const ws = XLSX.utils.aoa_to_sheet(data);
-    ws['!cols'] = [{wch:3},{wch:22},{wch:9},{wch:14},{wch:11},{wch:46},{wch:34},{wch:30},{wch:10}];
+    ws['!cols'] = [{wch:3},{wch:22},{wch:9},{wch:14},{wch:11},{wch:7},{wch:7},{wch:7},{wch:46},{wch:34},{wch:30},{wch:10}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, (S.f.dept === 'All' ? 'All Discrepancies' : S.f.dept).slice(0,31));
     XLSX.writeFile(wb, `Attendance_Discrepancies_${S.period.id}_${S.f.dept.replace(/\s+/g,'_')}.xlsx`);
@@ -1642,6 +1681,15 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     XLSX.writeFile(wb, `Attendance_Combined_${isoToDmy(r.start)}_to_${isoToDmy(r.end)}.xlsx`);
   });
 
+  // IN / OUT / WH / state of the flagged day, taken from the combined attendance
+  function punchesFor(i){
+    if (!i.date) return {};
+    const key = (i.date.getUTCMonth() + 1) * 100 + i.date.getUTCDate();
+    const p = A.combined.people.find(x => x.name === i.name && x.id === i.staffId && x.dept === i.department);
+    const d = p && p.days[key];
+    return d ? { punchIn: d.in, punchOut: d.out, wh: d.wh, state: d.state } : {};
+  }
+
   $('saveBtn').addEventListener('click', async () => {
     if (!A.combined) return;
     const r = periodRange();
@@ -1653,7 +1701,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
         sources: A.sources.map(s => s.label),
         staffCount: A.combined.people.length,
         checks: A.combined.checks.filter(c => c.kind !== "same").map(c => ({ id: c.id, kind: c.kind, decision: c.decision, clusters: c.clusters || [], names: c.records.map(x => x.name) })),
-        issues: A.issues.map(i => ({ name: i.name, staffId: i.staffId, department: i.department, date: dateToIso(i.date), cat: i.cat, issue: i.issue, action: i.action, status: i.status })),
+        issues: A.issues.map(i => Object.assign({ name: i.name, staffId: i.staffId, department: i.department, date: dateToIso(i.date), cat: i.cat, issue: i.issue, action: i.action, status: i.status }, punchesFor(i))),
       }});
       S.periodId = out.id;
       store.set("aa_period", out.id);
