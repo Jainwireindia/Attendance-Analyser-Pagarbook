@@ -1,7 +1,10 @@
 # Changelog
 
 The version shows next to the app title (and on the login screen).
-`server ✓` means the Apps Script backend is the same version; a yellow `server vX` means one of them needs updating.
+`server ✓` means the Apps Script backend matches. Only the first two numbers are compared: a third-number change (2.2.**1**) is a page-only fix, so only `index.html` needs pushing. A yellow `server vX` means Code.gs needs redeploying (or the page pushing).
+
+## 2.2.1 – 27-11-2026 (page only)
+- Weekday (Mon, Tue…) under the date in the discrepancy list, Sundays highlighted; also in Copy for Excel and .xlsx
 
 ## 2.2.0 – 27-11-2026
 - Admin settings tab (renamed from Users): users, activity log, backup & restore, data wipe

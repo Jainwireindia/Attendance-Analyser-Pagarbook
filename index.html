@@ -224,6 +224,7 @@
     <label><span class="field-label">Password</span><input type="password" id="loginPass" autocomplete="current-password" required /></label>
     <button class="btn" type="submit" id="loginBtn">Log in</button>
     <p class="login-err" id="loginErr"></p>
+    <p class="hint" id="loginVer" style="margin-top:10px; font-size:11.5px;"></p>
     <details id="serverDetails">
       <summary>Server settings</summary>
       <label style="margin-top:8px;"><span class="field-label">Apps Script web app URL</span>
@@ -236,7 +237,7 @@
 <div id="appView" hidden>
   <div class="topbar">
     <div class="topbar-inner">
-      <div class="brand"><span class="eyebrow">Pagarbook · Attendance</span><span class="title">Attendance Analyser</span></div>
+      <div class="brand"><span class="eyebrow">Pagarbook · Attendance</span><span class="title">Attendance Analyser <span id="verBadge" class="mono" style="font-size:11px; color:#9FB3D6; vertical-align:middle;"></span></span></div>
       <div class="top-right">
         <select id="periodSelect" title="Attendance period"></select>
         <span class="sync" id="syncState"><span class="dot"></span><span id="syncText">—</span></span>
@@ -1154,6 +1155,7 @@ if (typeof module !== "undefined") module.exports = AttendanceCore;
    SETTINGS – paste your Apps Script web app URL here before publishing.
    (Users can also set it under "Server settings" on the login screen.)
    ====================================================================== */
+const APP_VERSION = "2.2.0";   // bump on every push, shown in the app
 const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1ofuNWPu3timfKTdwwGugtKvMxLa5EWehMaEubgwCH8q0/exec";
 
 (function(){
@@ -1227,6 +1229,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     } catch (e){ throw new Error("Can't reach the server. Check the internet connection."); }
     let out;
     try { out = await res.json(); } catch (e){ throw new Error("Unexpected server reply. Check the web app URL and that it is deployed for 'Anyone'."); }
+    if (out.version && out.version !== S.serverVersion){ S.serverVersion = out.version; showVersion(); }
     if (!out.ok){
       if (out.error === "LOGIN_REQUIRED"){ logout("Session expired – please log in again."); throw new Error("Session expired"); }
       throw new Error(out.error || "Server error");
@@ -1234,8 +1237,20 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     return out;
   }
 
+  // ---------------- version ----------------
+  function showVersion(){
+    const sv = S.serverVersion;
+    const mismatch = sv && sv !== APP_VERSION;
+    const text = `v${APP_VERSION}` + (sv ? (mismatch ? ` · server v${sv}` : ` · server ✓`) : "");
+    $('verBadge').textContent = text;
+    $('verBadge').style.color = mismatch ? "#E6C35C" : "#9FB3D6";
+    $('verBadge').title = mismatch ? "The page and the Apps Script backend are different versions. Redeploy Code.gs as a new version, or push the latest index.html." : "App and server versions match";
+    $('loginVer').textContent = `App version ${APP_VERSION}` + (sv ? ` · server ${sv}` : "");
+  }
+
   // ---------------- login ----------------
   function initLogin(){
+    showVersion();
     const saved = store.get("aa_session") || {};
     S.url = API_URL || saved.url || "";
     $('serverUrl').value = S.url;
