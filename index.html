@@ -54,6 +54,16 @@
 
   main{max-width:1240px; margin:0 auto; padding:22px 24px 64px;}
   main.wide{max-width:none;}
+  .pend{color:#8A6206; font-weight:600;}
+  .cf-row{border:1px solid var(--rule); border-radius:3px; padding:10px 12px; margin-bottom:10px;}
+  .cf-row .cf-head{font-weight:600; color:var(--navy);}
+  .cf-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:8px 0;}
+  .cf-grid > div{background:var(--paper-2); border-radius:3px; padding:8px 10px; font-size:12.8px;}
+  .cf-grid b{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:3px;}
+  .modal.wide{max-width:760px; max-height:88vh; overflow:auto;}
+  @media (max-width:640px){ .cf-grid{grid-template-columns:1fr;} }
+  td.date .wd{display:block; font-size:11.5px; margin-top:2px;}
+  td.date .wd.sun{color:var(--teal); font-weight:700;}
   td.punch{font-family:ui-monospace,monospace; white-space:nowrap; font-size:12.5px;}
   td.punch .miss{color:var(--crimson); font-weight:700;}
   td.punch .hi{color:#8A6206; font-weight:700;}
@@ -274,6 +284,7 @@
             </div>
           </div>
           <div class="banner" id="dashClash" hidden></div>
+          <div class="banner cf-banner" hidden style="margin-bottom:14px;"></div>
         </div>
         <div class="grid" style="margin-top:18px;">
           <div class="card">
@@ -326,6 +337,7 @@
           <label><span class="field-label">Type</span><select id="fCat"></select></label>
           <label class="grow"><span class="field-label">Search name / ID / issue</span><input type="text" id="fQ" placeholder="e.g. Ashok or L-105" /></label>
         </div>
+        <div class="banner no-print cf-banner" hidden></div>
         <p class="hint no-print" id="listHint" style="padding:10px 18px 0;"></p>
         <div class="table-wrap" style="margin-top:8px;">
           <table class="list">
@@ -512,6 +524,19 @@
     <p class="login-err" id="pwErr"></p>
     <div class="btn-row"><button class="btn" type="submit">Change</button><button class="btn secondary" type="button" id="pwCancel">Cancel</button></div>
   </form>
+</div>
+
+<div class="modal-bg" id="cfModal" hidden>
+  <div class="modal wide">
+    <h3>Changes made on another device</h3>
+    <p class="hint" style="margin:-6px 0 14px;">These discrepancies were changed by someone else after you last synced. Your entry has <b>not</b> been saved yet. Choose which one to keep.</p>
+    <div id="cfList"></div>
+    <div class="btn-row" style="margin-top:12px;">
+      <button class="btn" id="cfAllMine">Keep all mine</button>
+      <button class="btn secondary" id="cfAllTheirs">Keep all theirs</button>
+      <button class="btn secondary" id="cfClose">Decide later</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"><span id="toastText"></span><button id="toastAction" hidden></button></div>
@@ -1155,7 +1180,7 @@ if (typeof module !== "undefined") module.exports = AttendanceCore;
    SETTINGS – paste your Apps Script web app URL here before publishing.
    (Users can also set it under "Server settings" on the login screen.)
    ====================================================================== */
-const APP_VERSION = "2.2.0";   // bump on every push, shown in the app
+const APP_VERSION = "2.3.0";   // bump on every push, shown in the app
 const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1ofuNWPu3timfKTdwwGugtKvMxLa5EWehMaEubgwCH8q0/exec";
 
 (function(){
@@ -1240,7 +1265,8 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
   // ---------------- version ----------------
   function showVersion(){
     const sv = S.serverVersion;
-    const mismatch = sv && sv !== APP_VERSION;
+    const mm = v => String(v).split('.').slice(0, 2).join('.');   // 2.2.1 page fix still matches server 2.2.0
+    const mismatch = sv && mm(sv) !== mm(APP_VERSION);
     const text = `v${APP_VERSION}` + (sv ? (mismatch ? ` · server v${sv}` : ` · server ✓`) : "");
     $('verBadge').textContent = text;
     $('verBadge').style.color = mismatch ? "#E6C35C" : "#9FB3D6";
@@ -1288,7 +1314,13 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     $('appView').hidden = true; $('loginView').hidden = false;
     $('loginErr').textContent = msg || "";
   }
-  $('logoutBtn').addEventListener('click', () => logout());
+  $('logoutBtn').addEventListener('click', async () => {
+    if (mine().length){
+      await flush();
+      if (mine().length && !confirm(`${mine().length} change(s) are not saved yet. They stay on this computer and are sent when ${S.user.name} logs in again here. Log out anyway?`)) return;
+    }
+    logout();
+  });
 
   function enterApp(){
     $('loginView').hidden = true; $('appView').hidden = false;
@@ -1299,49 +1331,267 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     S.periodId = (store.get("aa_period") || "");
     S.library = store.get("aa_library") || {};
     const cached = S.periodId && store.get("aa_cache_" + S.periodId);
-    if (cached){ S.period = cached; render(); }
+    if (cached){ S.period = cached; reapplyPending(); render(); }
     showView(S.view);
+    updatePending();
     sync();
   }
+
+  // ---------------- outbox: save on this device first, send to Drive in batches ----------------
+  // Every solution / tick is kept in this browser until the server confirms it, so nothing is
+  // lost when the network drops, the server is busy, or the page is reloaded.
+  const OB_KEY = "aa_outbox", CF_KEY = "aa_conflicts";
+  let OUTBOX = store.get(OB_KEY) || {};     // "periodId|issueId" -> pending change
+  let CONFLICTS = store.get(CF_KEY) || [];  // changes the server refused because someone else changed it first
+  let flushing = false, flushTimer = null, retryDelay = 5000, flushFailed = false;
+
+  const mine = () => Object.values(OUTBOX).filter(x => S.user && x.user === S.user.username);
+  const myConflicts = () => CONFLICTS.filter(x => S.user && x.user === S.user.username);
+  function obSave(){ store.set(OB_KEY, OUTBOX); store.set(CF_KEY, CONFLICTS); updatePending(); }
+  function hhmm(d){ return String(d.getHours()).padStart(2,'0') + ":" + String(d.getMinutes()).padStart(2,'0'); }
+
+  function updatePending(){
+    const n = mine().length;
+    if (flushing) setSync("busy", `Saving ${n}…`);
+    else if (n && flushFailed) setSync("err", `${n} not saved – retrying`);
+    else if (n) setSync("busy", `${n} waiting to save`);
+    else if (S.lastSync) setSync("", "All saved · " + hhmm(S.lastSync));
+    const c = myConflicts().length;
+    document.querySelectorAll('.cf-banner').forEach(el => {
+      el.hidden = !c;
+      el.innerHTML = c ? `<strong>${c === 1 ? '1 of your changes' : c + ' of your changes'}</strong> clash${c === 1 ? 'es' : ''} with a change made on another device and ${c === 1 ? 'was' : 'were'} not saved. <a style="cursor:pointer; font-weight:600; text-decoration:underline;" class="cf-open">Review now</a>` : "";
+    });
+    document.querySelectorAll('.cf-open').forEach(a => a.onclick = openConflicts);
+  }
+
+  function applyLocal(issue, ch){
+    const now = new Date().toISOString();
+    if (ch.solution !== undefined){
+      issue.solution = ch.solution; issue.solutionBy = S.user.username; issue.solutionAt = now;
+      if (issue.status !== 'done') issue.status = ch.solution ? 'answered' : 'open';
+    }
+    if (ch.done !== undefined){
+      if (ch.done){ issue.status = 'done'; issue.doneBy = S.user.username; issue.doneAt = now; }
+      else { issue.status = issue.solution ? 'answered' : 'open'; issue.doneBy = ''; issue.doneAt = ''; }
+    }
+    issue._pending = true;
+  }
+
+  // put this device's unsaved changes back on top of freshly loaded data
+  function reapplyPending(){
+    if (!S.period) return;
+    mine().filter(x => x.periodId === S.period.id).forEach(it => {
+      const i = S.period.issues.find(x => x.id === it.issueId);
+      if (!i) return;
+      if ((i.rev || 0) !== it.baseRev){
+        // changed elsewhere since this edit: it becomes a conflict on the next save; keep showing mine for now
+      }
+      applyLocal(i, { solution: it.solution, done: it.done });
+    });
+  }
+
+  function cacheLocal(){
+    if (!S.period) return;
+    store.set("aa_cache_" + S.period.id, S.period);
+    const entry = S.periods.find(p => p.id === S.period.id);
+    if (entry && (!S.user || S.user.role !== "supervisor" || !S.user.depts.length)) entry.counts = counts(S.period.issues);
+    renderPeriodSelect();
+  }
+
+  function queueChange(issue, patch){
+    const k = S.period.id + "|" + issue.id;
+    let it = OUTBOX[k];
+    if (!it) it = OUTBOX[k] = { periodId: S.period.id, issueId: issue.id, user: S.user.username, baseRev: issue.rev || 0,
+                                orig: { solution: issue.solution || "", done: issue.status === "done" } };
+    Object.assign(it, patch, { t: Date.now() });
+    applyLocal(issue, patch);
+    if (it.solution === it.orig.solution) delete it.solution;
+    if (it.done === it.orig.done) delete it.done;
+    if (it.solution === undefined && it.done === undefined){ delete OUTBOX[k]; issue._pending = false; }  // back to what the server has
+    obSave(); cacheLocal();
+    scheduleFlush(4000);
+  }
+
+  function scheduleFlush(ms){ clearTimeout(flushTimer); flushTimer = setTimeout(flush, ms); }
+
+  function mergeServerIssue(pid, srv){
+    if (!S.period || S.period.id !== pid) return;
+    const idx = S.period.issues.findIndex(i => i.id === srv.id);
+    if (idx < 0) return;
+    const fresh = Object.assign({}, srv);
+    const it = OUTBOX[pid + "|" + srv.id];
+    if (it && it.user === S.user.username) applyLocal(fresh, { solution: it.solution, done: it.done });
+    S.period.issues[idx] = fresh;
+  }
+
+  async function flush(){
+    if (flushing || !S.user) return true;
+    const items = mine();
+    if (!items.length){ updatePending(); return true; }
+    flushing = true; updatePending();
+    const problems = [];
+    try {
+      const byP = {};
+      items.forEach(it => (byP[it.periodId] = byP[it.periodId] || []).push(it));
+      for (const pid of Object.keys(byP)){
+        const sent = {};
+        byP[pid].forEach(it => sent[it.issueId] = { k: pid + "|" + it.issueId, t: it.t });
+        const out = await api("batchUpdate", { periodId: pid, changes: byP[pid].map(it => ({ issueId: it.issueId, baseRev: it.baseRev, solution: it.solution, done: it.done })) });
+        (out.applied || []).forEach(srv => {
+          const s = sent[srv.id], it = OUTBOX[s.k];
+          if (it && it.t === s.t) delete OUTBOX[s.k];
+          else if (it){ it.baseRev = srv.rev || 0; it.orig = { solution: srv.solution || "", done: srv.status === "done" }; }  // edited again while saving
+          mergeServerIssue(pid, srv);
+        });
+        (out.conflicts || []).forEach(c => {
+          const s = sent[c.server.id], it = OUTBOX[s.k];
+          delete OUTBOX[s.k];
+          CONFLICTS = CONFLICTS.filter(x => !(x.periodId === pid && x.server.id === c.server.id && x.user === S.user.username));
+          CONFLICTS.push({ periodId: pid, user: S.user.username, server: c.server,
+                           mine: { solution: it ? it.solution : c.change.solution, done: it ? it.done : c.change.done }, t: Date.now() });
+          mergeServerIssue(pid, c.server);
+        });
+        (out.errors || []).forEach(e => {
+          const s = sent[e.issueId];
+          if (s) delete OUTBOX[s.k];
+          problems.push(e.error);
+        });
+      }
+      flushFailed = false; retryDelay = 5000;
+      S.lastSync = new Date();
+    } catch (err){
+      flushFailed = true;
+      if (S.user) scheduleFlush(retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 60000);
+    } finally {
+      flushing = false;
+      obSave(); cacheLocal(); softRefresh();
+    }
+    if (problems.length){ toast("Not saved: " + Array.from(new Set(problems)).join("; ")); sync(true); }
+    if (myConflicts().length) toast(`${myConflicts().length === 1 ? '1 change clashes' : myConflicts().length + ' changes clash'} with another device`, "Review", openConflicts);
+    return !flushFailed;
+  }
+
+  // update what's on screen without rebuilding rows the user may be typing in
+  function softRefresh(){
+    if (S.view === "dash") return renderDash();
+    if (S.view !== "list" || !S.period) return;
+    updateCounts();
+    document.querySelectorAll('#listBody tr[data-id]').forEach(tr => updateRowMeta(tr.getAttribute('data-id')));
+  }
+  function updateRowMeta(id){
+    const tr = document.querySelector(`#listBody tr[data-id="${CSS.escape(id)}"]`);
+    const i = findIssue(id);
+    if (!tr || !i) return;
+    const by = tr.querySelector('.by');
+    if (by) by.innerHTML = (i.solution ? `${esc(i.solutionBy || '')} · ${esc(stamp(i.solutionAt))}` : "") + (i._pending ? ` <span class="pend">● not saved yet</span>` : "");
+    const inp = tr.querySelector('input[data-sol]');
+    if (inp && document.activeElement !== inp && inp.value.trim() !== (i.solution || "")) inp.value = i.solution || "";
+    const cb = tr.querySelector('input[data-tick]');
+    if (cb){
+      cb.checked = i.status === 'done';
+      cb.disabled = !i.solution && !i.auto && i.status !== 'done';
+      cb.title = cb.disabled ? "Enter a solution first" : "Rectified in Pagarbook";
+    }
+  }
+
+  // ---------------- conflicts ----------------
+  function describe(sol, done){
+    return `${sol ? `“${esc(sol)}”` : '<span class="hint">no solution</span>'}${done === true ? ' · <b style="display:inline; color:var(--sage);">✓ ticked</b>' : done === false ? ' · not ticked' : ''}`;
+  }
+  function openConflicts(){
+    const list = myConflicts();
+    if (!list.length){ $('cfModal').hidden = true; return; }
+    $('cfList').innerHTML = list.map((c, n) => {
+      const sv = c.server, m = c.mine;
+      return `<div class="cf-row">
+        <div class="cf-head">${esc(sv.name)} <span class="mono hint">${esc(sv.staffId)}</span> · ${esc(isoToDmy(sv.date))} ${sv.date ? weekday(sv.date) : ''} · <span class="tag ${esc(sv.cat)}">${CAT_LABEL[sv.cat] || ''}</span>${esc(sv.issue)}</div>
+        ${c.periodId !== (S.period && S.period.id) ? `<div class="hint">Period ${esc(c.periodId.replace('_', ' to '))}</div>` : ''}
+        <div class="cf-grid">
+          <div><b>Saved by ${esc(sv.solutionBy || sv.doneBy || '?')} · ${esc(stamp(sv.solutionAt || sv.doneAt))}</b>${describe(sv.solution, sv.status === 'done')}</div>
+          <div><b>Yours (not saved)</b>${describe(m.solution !== undefined ? m.solution : sv.solution, m.done)}</div>
+        </div>
+        <div class="btn-row"><button class="btn small" data-cf="${n}" data-keep="mine">Keep mine</button><button class="btn secondary small" data-cf="${n}" data-keep="theirs">Keep theirs</button></div>
+      </div>`;
+    }).join('');
+    $('cfList').querySelectorAll('button[data-cf]').forEach(b => b.addEventListener('click', () => {
+      resolveConflict(list[+b.getAttribute('data-cf')], b.getAttribute('data-keep') === 'mine');
+      openConflicts();
+    }));
+    $('cfModal').hidden = false;
+  }
+  function resolveConflict(c, keepMine){
+    CONFLICTS = CONFLICTS.filter(x => x !== c);
+    if (keepMine){
+      const sv = c.server, k = c.periodId + "|" + sv.id;
+      const it = { periodId: c.periodId, issueId: sv.id, user: S.user.username, baseRev: sv.rev || 0,
+                   orig: { solution: sv.solution || "", done: sv.status === "done" }, t: Date.now() };
+      if (c.mine.solution !== undefined && c.mine.solution !== it.orig.solution) it.solution = c.mine.solution;
+      if (c.mine.done !== undefined && c.mine.done !== it.orig.done) it.done = c.mine.done;
+      if (it.solution !== undefined || it.done !== undefined){
+        OUTBOX[k] = it;
+        const local = S.period && S.period.id === c.periodId && findIssue(sv.id);
+        if (local) applyLocal(local, { solution: it.solution, done: it.done });
+      }
+      scheduleFlush(300);
+    }
+    obSave(); cacheLocal();
+    if (S.view === "list") renderList(); else render();
+  }
+  $('cfAllMine').addEventListener('click', () => { myConflicts().forEach(c => resolveConflict(c, true)); $('cfModal').hidden = true; });
+  $('cfAllTheirs').addEventListener('click', () => { myConflicts().forEach(c => resolveConflict(c, false)); $('cfModal').hidden = true; });
+  $('cfClose').addEventListener('click', () => $('cfModal').hidden = true);
+
+  window.addEventListener('beforeunload', e => {
+    if (mine().length){ flush(); e.preventDefault(); e.returnValue = ""; }
+  });
 
   // ---------------- sync ----------------
   async function sync(quiet){
     if (S.syncing || !S.user) return;
     S.syncing = true;
-    setSync("busy", "Syncing…");
     try {
+      await flush();                    // send this device's changes first
+      setSync("busy", "Syncing…");
       const out = await api("listPeriods", {});
       S.periods = out.periods || [];
       if (!S.periods.some(p => p.id === S.periodId)) S.periodId = S.periods.length ? S.periods[0].id : "";
       if (S.periodId){
         const p = await api("getPeriod", { id: S.periodId });
         S.period = p.period;
+        reapplyPending();               // anything still unsaved stays on screen
         S.library = p.library || {};
         store.set("aa_library", S.library);
-        store.set("aa_cache_" + S.periodId, S.period);
         store.set("aa_period", S.periodId);
+        cacheLocal();
       } else S.period = null;
       S.lastSync = new Date();
-      setSync("", "Synced " + String(S.lastSync.getHours()).padStart(2,'0') + ":" + String(S.lastSync.getMinutes()).padStart(2,'0'));
       render();
     } catch (err){
-      setSync("err", "Offline");
       if (!quiet) toast(err.message);
-    } finally { S.syncing = false; }
+      flushFailed = true;
+    } finally { S.syncing = false; updatePending(); }
   }
   $('syncBtn').addEventListener('click', () => sync());
   setInterval(() => {
     if (!S.user || document.hidden) return;
+    if (mine().length) flush();
     const a = document.activeElement;
     if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT")) return;
     if (S.view === "dash" || S.view === "list") sync(true);
   }, 60000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.user && S.lastSync && Date.now() - S.lastSync > 30000) sync(true); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden){ if (S.user && mine().length) flush(); return; }
+    if (S.user && S.lastSync && Date.now() - S.lastSync > 30000){
+      const a = document.activeElement;
+      if (!(a && a.tagName === "INPUT")) sync(true);
+    }
+  });
 
   $('periodSelect').addEventListener('change', async e => {
     S.periodId = e.target.value;
     const cached = store.get("aa_cache_" + S.periodId);
-    if (cached){ S.period = cached; render(); }
+    if (cached){ S.period = cached; reapplyPending(); render(); }
     await sync();
   });
 
@@ -1463,6 +1713,11 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     ).sort((a,b) => (a.department > b.department ? 1 : a.department < b.department ? -1 : 0) || (a.name > b.name ? 1 : a.name < b.name ? -1 : 0) || String(a.date).localeCompare(String(b.date)));
   }
 
+  function weekday(iso){
+    const d = new Date(iso + "T00:00:00Z");
+    return isNaN(d) ? "" : ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getUTCDay()];
+  }
+
   function punchText(v, worked){
     if (v === undefined || v === null) return '<span class="hint">·</span>';   // not stored (older save)
     if (v && v !== '-') return esc(v);
@@ -1501,7 +1756,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
       const tick = canTick
         ? `<input type="checkbox" class="tick" data-tick="${esc(i.id)}" ${i.status === 'done' ? 'checked' : ''} ${(!i.solution && !i.auto && i.status !== 'done') ? 'disabled title="Enter a solution first"' : 'title="Rectified in Pagarbook"'} />`
         : `<span class="tag ${i.status === 'done' ? 'auto' : i.status === 'answered' ? 'ot' : 'abs'}">${i.status === 'done' ? 'Rectified' : i.status === 'answered' ? 'To rectify' : 'Open'}</span>`;
-      const by = i.solution ? `${esc(i.solutionBy||'')} · ${esc(stamp(i.solutionAt))}` : "";
+      const by = (i.solution ? `${esc(i.solutionBy||'')} · ${esc(stamp(i.solutionAt))}` : "") + (i._pending ? ` <span class="pend">● not saved yet</span>` : "");
       const done = i.status === 'done' ? `<div class="by">✓ ${i.doneBy === 'auto' ? (i.auto ? 'automatic' : 'cleared by new upload') : esc(i.doneBy)} · ${esc(stamp(i.doneAt))}</div>` : "";
       const lockSol = i.status === 'done' && !canTick;
       const worked = /P/.test(i.state || '');
@@ -1509,7 +1764,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
       const whCls = i.cat === 'ot' ? 'hi' : i.cat === 'half' ? 'lo' : '';
       return `<tr data-id="${esc(i.id)}">
         <td class="name">${esc(i.name)}${i.staffId ? `<span class="sid">${esc(i.staffId)}</span>` : ''}${S.f.dept === 'All' ? `<span class="dept">${esc(i.department)}</span>` : ''}</td>
-        <td class="date">${i.date ? esc(isoToDmy(i.date)) : '—'}</td>
+        <td class="date">${i.date ? `${esc(isoToDmy(i.date))}<span class="wd ${weekday(i.date) === 'Sun' ? 'sun' : ''}">${weekday(i.date)}</span>` : '—'}</td>
         <td class="punch">${pin}</td>
         <td class="punch">${pout}</td>
         <td class="punch">${i.wh && i.wh !== '-' ? `<span class="${whCls}">${esc(i.wh)}</span>` : '–'}${i.state ? `<span class="st">${esc(i.state)}</span>` : ''}</td>
@@ -1540,62 +1795,29 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
   }
 
   function findIssue(id){ return S.period && S.period.issues.find(i => i.id === id); }
-  function replaceIssue(updated){
-    const idx = S.period.issues.findIndex(i => i.id === updated.id);
-    if (idx >= 0) S.period.issues[idx] = updated;
-    store.set("aa_cache_" + S.period.id, S.period);
-    const entry = S.periods.find(p => p.id === S.period.id);
-    if (entry && (!S.user || S.user.role !== "supervisor" || !S.user.depts.length)) entry.counts = counts(S.period.issues);
-    renderPeriodSelect();
-  }
-
-  async function saveSolution(inp){
+  function saveSolution(inp){
     const id = inp.getAttribute('data-sol');
     const issue = findIssue(id);
     const val = inp.value.trim();
     if (!issue || val === (issue.solution || "")) return;
-    const cell = inp.closest('.sol-cell');
-    cell.classList.add('saving');
-    try {
-      const out = await api("updateIssue", { periodId: S.period.id, issueId: id, solution: val });
-      replaceIssue(out.issue);
-      cell.classList.remove('saving'); cell.classList.add('saved');
-      // leave the row in place while the user works down the list; refresh counts and the tick box
-      const tr = inp.closest('tr');
-      const cb = tr.querySelector('input[data-tick]');
-      if (cb) { cb.disabled = !out.issue.solution && !out.issue.auto && out.issue.status !== 'done'; cb.title = cb.disabled ? "Enter a solution first" : "Rectified in Pagarbook"; }
-      tr.querySelector('.by').textContent = out.issue.solution ? `${out.issue.solutionBy} · ${stamp(out.issue.solutionAt)}` : "";
-      updateCounts();
-      if (val){ const lib = S.library[issue.cat] || (S.library[issue.cat] = {}); lib[val] = (lib[val] || 0) + 1; }
-      renderSolLists();
-      toast(val ? "Solution saved" : "Solution cleared");
-    } catch (err){
-      cell.classList.remove('saving');
-      inp.value = issue.solution || "";
-      toast(err.message);
-    }
+    queueChange(issue, { solution: val });
+    if (val){ const lib = S.library[issue.cat] || (S.library[issue.cat] = {}); lib[val] = (lib[val] || 0) + 1; renderSolLists(); }
+    updateRowMeta(id);
+    updateCounts();
   }
 
-  async function setDone(id, done, cb){
+  function setDone(id, done, cb){
+    const issue = findIssue(id);
+    if (!issue) return;
     const tr = cb.closest('tr');
-    cb.disabled = true;
-    try {
-      const out = await api("updateIssue", { periodId: S.period.id, issueId: id, done });
-      replaceIssue(out.issue);
-      const stillVisible = S.f.status === "all" && !S.f.liveOnly;
-      if (!stillVisible){
-        tr.classList.add('leaving');
-        setTimeout(() => { renderList(); }, 350);
-      } else renderList();
-      toast(done ? `${out.issue.name}: rectified` : `${out.issue.name}: back to “to rectify”`, "Undo", () => undoDone(id, !done));
-    } catch (err){
-      cb.checked = !done; cb.disabled = false;
-      toast(err.message);
-    }
-  }
-  async function undoDone(id, done){
-    try { const out = await api("updateIssue", { periodId: S.period.id, issueId: id, done }); replaceIssue(out.issue); renderList(); }
-    catch (err){ toast(err.message); }
+    queueChange(issue, { done });
+    const stillVisible = S.f.status === "all" && !S.f.liveOnly;
+    if (!stillVisible){ tr.classList.add('leaving'); setTimeout(renderList, 350); }
+    else renderList();
+    toast(done ? `${issue.name}: rectified` : `${issue.name}: back to “to rectify”`, "Undo", () => {
+      const i = findIssue(id);
+      if (i){ queueChange(i, { done: !done }); renderList(); }
+    });
   }
 
   function updateCounts(){
@@ -1612,7 +1834,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
   $('copyBtn').addEventListener('click', () => {
     const rows = filtered();
     const lines = [["Staff Name","Department","Date","IN","OUT","WH","Issue","Action","Status"].join('\t')]
-      .concat(rows.map(i => [i.name, i.department, isoToDmy(i.date), i.punchIn||'', i.punchOut||'', i.wh||'', i.issue, i.action, i.solution || ''].join('\t')));
+      .concat(rows.map(i => [i.name, i.department, i.date ? isoToDmy(i.date) + ' ' + weekday(i.date) : '', i.punchIn||'', i.punchOut||'', i.wh||'', i.issue, i.action, i.solution || ''].join('\t')));
     navigator.clipboard.writeText(lines.join('\n'))
       .then(() => toast(`Copied ${rows.length} rows — paste into your report Excel`))
       .catch(() => toast("Couldn't copy automatically — select the table and copy manually"));
@@ -1621,7 +1843,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycby4Qblg52csFRrvrqePrMY1
     if (typeof XLSX === "undefined") return toast("Spreadsheet library not loaded (needs internet)");
     const rows = filtered();
     const data = [["","Staff Name","Staff ID","Department","Date","IN","OUT","WH","Issue","Action","Solution","Rectified"]].concat(rows.map(i =>
-      ["", i.name, i.staffId, i.department, isoToDmy(i.date), i.punchIn||'', i.punchOut||'', i.wh||'', i.issue, i.action, i.solution || '', i.status === 'done' ? 'Yes' : '']));
+      ["", i.name, i.staffId, i.department, i.date ? isoToDmy(i.date) + " " + weekday(i.date) : "", i.punchIn||'', i.punchOut||'', i.wh||'', i.issue, i.action, i.solution || '', i.status === 'done' ? 'Yes' : '']));
     const ws = XLSX.utils.aoa_to_sheet(data);
     ws['!cols'] = [{wch:3},{wch:22},{wch:9},{wch:14},{wch:11},{wch:7},{wch:7},{wch:7},{wch:46},{wch:34},{wch:30},{wch:10}];
     const wb = XLSX.utils.book_new();
